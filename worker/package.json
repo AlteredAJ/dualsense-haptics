@@ -1,0 +1,19 @@
+{
+  "name": "dualsense-haptics-license-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev":      "wrangler dev",
+    "deploy":   "wrangler deploy",
+    "typecheck": "tsc --noEmit --strict --target es2022 --module esnext --moduleResolution bundler --types @cloudflare/workers-types --lib es2022 src/index.ts",
+    "beta":     "./scripts/beta.sh",
+    "beta:mint": "./scripts/beta.sh mint",
+    "beta:list": "./scripts/beta.sh list",
+    "brick":  "curl -s -X POST https://dualsense-haptics-license.universal-dualsense-haptics.workers.dev/admin/set-min-version -H 'Content-Type: application/json' -H \"X-Admin-Key: $ADMIN_KEY\" -d \"{\\\"version\\\":\\\"$VER\\\"}\""
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+name       = "dualsense-haptics-license"
+main       = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding  = "LICENSES"
+id       = "92be99c566844af8ba9bda25ab9c6ee0"
+
+# Secrets — set with: wrangler secret put GUMROAD_PRODUCT_ID
+# Required secrets:
+#   GUMROAD_PRODUCT_ID   — from your Gumroad product page
+#   TOKEN_SECRET         — any long random string, used to sign tokens

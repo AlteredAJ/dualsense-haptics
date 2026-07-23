@@ -1,0 +1,31 @@
+# Rust / Tauri build artifacts
+/src-tauri/target/
+**/target/
+
+# Bundled WebView2 runtime (local copy to bypass this machine's Edge SRP block)
+/wv2runtime/
+
+# Node
+node_modules/
+worker/node_modules/
+dist/
+
+# Cloudflare Wrangler
+.wrangler/
+
+# Minecraft mod (Gradle/Fabric)
+minecraft-mod/.gradle/
+minecraft-mod/build/
+minecraft-mod/run/
+minecraft-mod/gradle/
+minecraft-mod/gradlew
+minecraft-mod/gradlew.bat
+minecraft-mod/.idea/
+
+# macOS
+.DS_Store
+
+# Editor / misc
+*.log
+.env
+.env.local

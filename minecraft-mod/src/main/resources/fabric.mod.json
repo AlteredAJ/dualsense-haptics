@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "dualsense_haptics_bridge",
+  "version": "${version}",
+  "name": "DualSense Haptics Bridge",
+  "description": "Pushes the currently held-item category to the Universal DualSense Haptics app over localhost so the controller's haptics react to what you're holding.",
+  "authors": ["AJ"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/dualsense_haptics_bridge/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.ajapaukese.dshaptics.DsHapticsClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}

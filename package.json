@@ -1,0 +1,16 @@
+{
+  "name": "dualsense-haptics",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "CARGO_TARGET_DIR=src-tauri/target/check cargo check --manifest-path src-tauri/Cargo.toml",
+    "serve": "serve src -p 1420"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "concurrently": "^10.0.3",
+    "serve": "^14.2.6"
+  }
+}

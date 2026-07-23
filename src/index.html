@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Universal DualSense Haptics</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ─── Main app ────────────────────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- Upgrade banner — visible in Free tier only -->
+  <div id="upgrade-banner" class="hidden">
+    <div id="upgrade-top-row">
+      <span>🔓 <strong>Free tier</strong> — haptics active, Light strength only</span>
+      <button id="upgrade-expand-btn">Upgrade →</button>
+      <button id="upgrade-dismiss" title="Dismiss">✕</button>
+    </div>
+    <!-- Key input row — hidden until user clicks Upgrade -->
+    <div id="upgrade-key-row" class="hidden">
+      <input id="key-input" type="text" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" spellcheck="false" />
+      <button id="license-submit">Unlock</button>
+      <a id="gumroad-link" href="https://alt3red.gumroad.com/l/universal-dualsense-haptics" target="_blank">Get a key →</a>
+    </div>
+    <div id="license-error"></div>
+  </div>
+
+  <!-- Lab upsell — shown when a non-Pro user clicks the locked Lab button -->
+  <div id="lab-upsell" class="hidden">
+    <div id="lab-upsell-card">
+      <button id="lab-upsell-close" title="Close">✕</button>
+      <div id="lab-upsell-title">🔬 The Lab is a Pro feature</div>
+      <p id="lab-upsell-body">Live-preview any profile without a game, and tune every weapon's feel with real-time sliders. Unlock it with Pro.</p>
+      <a id="lab-upsell-link" class="lab-upsell-cta" href="https://alt3red.gumroad.com/l/universal-dualsense-haptics" target="_blank">Unlock the Lab — $4 →</a>
+    </div>
+  </div>
+
+  <!-- Update available banner — shown when a newer version exists -->
+  <div id="update-banner" class="hidden">
+    ⬆ Update available — <span id="update-version"></span>
+    <a id="update-link" href="https://alt3red.gumroad.com/l/universal-dualsense-haptics" target="_blank">Download →</a>
+  </div>
+
+  <div id="header" data-tauri-drag-region>
+    <span id="header-title">Universal DualSense Haptics</span>
+    <div id="header-right">
+      <button id="motion-toggle" class="view-btn" title="Motion — tilt steering &amp; gyro aim">🎮 Motion</button>
+      <button id="lab-toggle" class="view-btn" title="Lab — effect tester &amp; racing feel">🔬 Lab</button>
+      <button id="view-toggle" class="view-btn" title="Toggle view (V)">Compact</button>
+      <button id="theme-toggle" class="view-btn" title="Switch light or dark appearance">Theme</button>
+      <span id="conn-status" class="disconnected">⬤ Disconnected</span>
+    </div>
+  </div>
+
+  <div id="main">
+
+    <!-- Profile selector -->
+    <div class="selector-row">
+      <span class="selector-label">Profile</span>
+      <div class="btn-group" id="profile-btns">
+        <button class="pill" data-profile="racing">Racing</button>
+        <button class="pill" data-profile="static">Static</button>
+        <button class="pill" data-profile="gun">Gun</button>
+        <button class="pill" data-profile="melee">Melee</button>
+        <button class="pill" data-profile="audio">Audio</button>
+        <button class="pill" id="game-toggle" data-game-toggle>Game ▾</button>
+      </div>
+    </div>
+
+    <!-- Game selector — groups per-game profiles so the Profile row stays clean -->
+    <div class="selector-row" id="game-row" style="display:none">
+      <span class="selector-label">Game</span>
+      <select id="game-select">
+        <option value="">Select a game…</option>
+        <option value="deadisland2">Dead Island 2</option>
+        <option value="minecraft">Minecraft</option>
+      </select>
+    </div>
+
+    <!-- Output mode — native DualSense vs virtual Xbox (XInput) for XInput-only games -->
+    <div class="selector-row">
+      <span class="selector-label">Output</span>
+      <div class="btn-group" id="output-btns">
+        <button class="pill" data-output="dualsense" title="Game reads the DualSense directly">DualSense</button>
+        <button class="pill" data-output="xbox" title="Virtual Xbox pad for XInput-only games like Forza (Windows)">Xbox</button>
+      </div>
+      <span id="output-hint" class="output-hint"></span>
+    </div>
+
+    <!-- Game rumble passthrough — only meaningful in Xbox output mode -->
+    <div class="selector-row" id="pt-row" style="display:none">
+      <span class="selector-label">Game rumble</span>
+      <button id="pt-enable" class="toggle-pill on" title="Re-expand the rumble the game sends to the virtual pad into DualSense haptics">→ Haptics</button>
+      <input type="range" id="pt-intensity" min="10" max="200" value="100" title="Intensity">
+      <span class="slider-val" id="pt-intensity-val">1.0×</span>
+      <button id="pt-kick" class="toggle-pill on" title="Big hits also kick the triggers">Kick</button>
+      <button id="pt-lb" class="toggle-pill on" title="Big hits flash the lightbar">Flash</button>
+      <div class="pt-meter" title="Live rumble from the game"><div id="pt-meter-fill"></div></div>
+    </div>
+
+    <!-- Strength selector -->
+    <div class="selector-row">
+      <span class="selector-label">Strength</span>
+      <div class="btn-group" id="strength-btns">
+        <button class="pill" data-idx="0">Light</button>
+        <button class="pill" data-idx="1">Medium</button>
+        <button class="pill" data-idx="2">Hard</button>
+        <button class="pill" data-idx="3">Max</button>
+      </div>
+    </div>
+
+    <!-- ── Full view: real DualSense controller ───────────────────────── -->
+    <div id="controller-wrap">
+      <div id="ctrl-container">
+        <!-- base SVG injected here by JS -->
+        <div id="ctrl-base"></div>
+
+        <!-- live-data overlay, same viewBox as the DualSense SVG -->
+        <svg id="ctrl-overlay" viewBox="0 0 1117 892"
+             preserveAspectRatio="xMidYMid meet"
+             xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <!-- clip L2 and R2 fill to the exact trigger shape -->
+            <clipPath id="l2-clip">
+              <path d="M252.212,116.785l-114.214,0c-12.312,0 1.248,-110.916 78.919,-110.916c37.32,-0 51.81,110.916 35.295,110.916Z"/>
+            </clipPath>
+            <clipPath id="r2-clip">
+              <path d="M866.471,116.785l114.214,0c12.312,0 -1.248,-110.916 -78.919,-110.916c-37.32,-0 -51.81,110.916 -35.295,110.916Z"/>
+            </clipPath>
+          </defs>
+
+          <!-- Trigger pressure fills (height grows upward from bottom) -->
+          <rect id="ov-l2-raw" class="ov-trig-raw" x="138" y="117" width="114" height="0"
+                clip-path="url(#l2-clip)"/>
+          <rect id="ov-r2-raw" class="ov-trig-raw" x="866" y="117" width="114" height="0"
+                clip-path="url(#r2-clip)"/>
+
+          <!-- Force output fills (slightly different shade) -->
+          <rect id="ov-l2-out" class="ov-trig-out" x="138" y="117" width="114" height="0"
+                clip-path="url(#l2-clip)"/>
+          <rect id="ov-r2-out" class="ov-trig-out" x="866" y="117" width="114" height="0"
+                clip-path="url(#r2-clip)"/>
+
+          <!-- Value labels -->
+          <text id="ov-l2-val"  class="ov-val" x="145" y="148" text-anchor="start">0</text>
+          <text id="ov-l2-fval" class="ov-fval" x="145" y="178" text-anchor="start">⇒0</text>
+          <text id="ov-r2-val"  class="ov-val" x="972" y="148" text-anchor="end">0</text>
+          <text id="ov-r2-fval" class="ov-fval" x="972" y="178" text-anchor="end">0⇐</text>
+
+          <!-- Stick position dots -->
+          <circle id="ov-ls-dot" class="ov-stick-dot" cx="351.764" cy="528.548" r="18"/>
+          <circle id="ov-rs-dot" class="ov-stick-dot" cx="763.456" cy="528.548" r="18"/>
+
+          <!-- Touchpad finger tracking dot -->
+          <circle id="ov-touch-dot" class="ov-touch-dot" cx="559" cy="270" r="9" visibility="hidden"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ── Compact view: trigger bars ─────────────────────────────────── -->
+    <div id="trigger-section" data-profile="racing">
+      <div class="trigger-row">
+        <span class="trigger-label">L2</span>
+        <div class="bar-track"><div class="bar-fill l2" id="l2-raw-bar" style="width:0%"></div></div>
+        <span class="trigger-val" id="l2-raw-val">0</span>
+        <div class="bar-track"><div class="bar-fill l2" id="l2-out-bar" style="width:0%"></div></div>
+        <span class="trigger-val" id="l2-out-val">0</span>
+      </div>
+      <div class="trigger-row">
+        <span class="trigger-label">R2</span>
+        <div class="bar-track"><div class="bar-fill r2" id="r2-raw-bar" style="width:0%"></div></div>
+        <span class="trigger-val" id="r2-raw-val">0</span>
+        <div class="bar-track"><div class="bar-fill r2" id="r2-out-bar" style="width:0%"></div></div>
+        <span class="trigger-val" id="r2-out-val">0</span>
+      </div>
+    </div>
+
+    <!-- Audio energy -->
+    <div id="audio-row">
+      <span class="audio-label">System audio — Energy</span>
+      <div class="audio-bar-track"><div class="audio-bar-fill" id="audio-bar" style="width:0%"></div></div>
+    </div>
+
+    <!-- Audio haptic EQ — two bands routed to the two actuators -->
+    <div id="audio-eq">
+      <div class="eq-band">
+        <div class="eq-band-head">
+          <span class="eq-band-name">SUB</span>
+          <span class="eq-band-desc">&lt;90 Hz · kicks &amp; impacts · left</span>
+        </div>
+        <div class="eq-meter"><div id="eq-sub-meter" class="eq-meter-fill"></div></div>
+        <div class="eq-row">
+          <span class="selector-label">Gain</span>
+          <input type="range" id="eq-sub" min="0" max="300" value="140">
+          <span class="slider-val" id="eq-sub-val">1.4×</span>
+        </div>
+      </div>
+      <div class="eq-band">
+        <div class="eq-band-head">
+          <span class="eq-band-name">ENGINE</span>
+          <span class="eq-band-desc">90–280 Hz · revs &amp; tone · right</span>
+        </div>
+        <div class="eq-meter"><div id="eq-eng-meter" class="eq-meter-fill"></div></div>
+        <div class="eq-row">
+          <span class="selector-label">Gain</span>
+          <input type="range" id="eq-eng" min="0" max="300" value="160">
+          <span class="slider-val" id="eq-eng-val">1.6×</span>
+        </div>
+      </div>
+      <div class="eq-row eq-gate-row">
+        <span class="selector-label">Noise gate</span>
+        <input type="range" id="eq-gate" min="1" max="60" value="12">
+        <span class="slider-val" id="eq-gate-val">0.012</span>
+        <span class="eq-hint" id="eq-mode-hint">reactive rumble</span>
+      </div>
+    </div>
+
+    <div id="mc-row">
+      <span id="mc-conn" class="mc-conn">⬤ Mod not connected</span>
+      <span class="mc-sep">·</span>
+      <span class="mc-label">Held item:</span>
+      <span id="mc-item" class="mc-item">—</span>
+      <span id="mc-action" class="mc-action" style="display:none"></span>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <div id="shift-controls">
+        <button class="toggle-pill on" id="shift-btn">Shift Feedback</button>
+      </div>
+      <div id="gun-controls" class="hidden">
+        <span class="mode-label">Weapon</span>
+        <div class="btn-group" id="weapon-btns">
+          <button class="pill" data-weapon="pistol">Pistol</button>
+          <button class="pill" data-weapon="revolver">Revolver</button>
+          <button class="pill" data-weapon="rifle">Rifle</button>
+          <button class="pill" data-weapon="burst">Burst</button>
+          <button class="pill" data-weapon="ar">AR</button>
+          <button class="pill" data-weapon="smg">SMG</button>
+          <button class="pill" data-weapon="lmg">LMG</button>
+          <button class="pill" data-weapon="shotgun">Shotgun</button>
+          <button class="pill" data-weapon="sniper">Sniper</button>
+        </div>
+      </div>
+      <div id="di2-controls" class="hidden">
+        <span class="mode-label">Equipped weapon — R2 = heavy attack / fire</span>
+        <div class="di2-group-label">Melee — fists &amp; weapons</div>
+        <div class="btn-group" id="di2-melee-btns">
+          <button class="pill" data-di2="melee:fists">Fists</button>
+          <button class="pill" data-di2="melee:knife">Knife</button>
+          <button class="pill" data-di2="melee:machete">Machete</button>
+          <button class="pill" data-di2="melee:katana">Katana</button>
+          <button class="pill" data-di2="melee:axe">Axe</button>
+          <button class="pill" data-di2="melee:cleaver">Cleaver</button>
+          <button class="pill" data-di2="melee:knuckles">Knuckles</button>
+          <button class="pill" data-di2="melee:bat">Bat / Pipe</button>
+          <button class="pill" data-di2="melee:spear">Spear</button>
+          <button class="pill" data-di2="melee:sledge">Sledgehammer</button>
+        </div>
+        <div class="di2-group-label">Firearms</div>
+        <div class="btn-group" id="di2-gun-btns">
+          <button class="pill" data-di2="gun:pistol">Pistol</button>
+          <button class="pill" data-di2="gun:revolver">Magnum</button>
+          <button class="pill" data-di2="gun:shotgun">Shotgun</button>
+          <button class="pill" data-di2="gun:smg">SMG</button>
+          <button class="pill" data-di2="gun:ar">Assault Rifle</button>
+          <button class="pill" data-di2="gun:rifle">Tactical Rifle</button>
+          <button class="pill" data-di2="gun:burst">Nail Gun</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- ── Lab — tabbed test bench (Trigger effects + Racing feel) ───────────── -->
+  <div id="lab-panel" class="hidden">
+    <div id="lab-header">
+      <div class="lab-tabs" id="lab-tabs">
+        <button class="lab-tab active" data-tab="racing">🏎 Racing</button>
+        <button class="lab-tab" data-tab="gun">🔫 Gun</button>
+        <button class="lab-tab" data-tab="melee">🔪 Melee</button>
+        <button class="lab-tab" data-tab="minecraft">⛏ Minecraft</button>
+        <button class="lab-tab" data-tab="audio">🔊 Audio</button>
+        <button class="lab-tab" data-tab="static">💡 Static</button>
+      </div>
+      <button id="lab-close" title="Close">✕</button>
+    </div>
+
+  <!-- Gun tab — weapon presets + raw trigger bench -->
+  <div class="lab-tab-content hidden" data-tab="gun">
+    <div class="lab-live">
+      <button class="toggle-pill lab-live-toggle" data-profile="gun">⚡ Live preview: OFF</button>
+      <span class="lab-live-hint">Routes the real engine to Gun. Pull R2 to fire the selected weapon.</span>
+    </div>
+    <div class="lab-section-label">Weapon (live)</div>
+    <div class="lab-preset-grid" id="gun-weapon-sel"></div>
+    <div class="feel-editor" id="gun-feel-editor"></div>
+    <div class="lab-row lab-actions feel-actions" id="gun-feel-actions" style="display:none">
+      <button class="pill feel-save" data-kind="gun">💾 Save feel</button>
+      <button class="pill feel-reset" data-kind="gun">↺ Reset all to defaults</button>
+    </div>
+
+    <div class="lab-section-label">Gun presets — tap to feel</div>
+    <div id="lab-presets"></div>
+
+    <div class="lab-row">
+      <span class="selector-label">Side</span>
+      <div class="btn-group" id="lab-side-btns">
+        <button class="pill" data-side="1">R2</button>
+        <button class="pill" data-side="0">L2</button>
+        <button class="pill" data-side="2">Both</button>
+      </div>
+    </div>
+
+    <div class="lab-row">
+      <span class="selector-label">Mode</span>
+      <select id="lab-mode">
+        <option value="0">Off (0x00)</option>
+        <option value="1">Rigid / Constant (0x01)</option>
+        <option value="2">Weapon / break (0x02)</option>
+        <option value="6">Vibration / auto (0x06)</option>
+        <option value="33">Feedback zoned (0x21)</option>
+        <option value="37">Weapon zoned (0x25)</option>
+        <option value="38">Vibration zoned (0x26)</option>
+        <option value="35">Galloping (0x23)</option>
+        <option value="39">Machine (0x27)</option>
+      </select>
+    </div>
+
+    <div id="lab-hint" class="lab-hint"></div>
+    <div id="lab-params"></div>
+
+    <div class="lab-row">
+      <span class="selector-label">Rumble L</span>
+      <input type="range" id="lab-rl" min="0" max="255" value="0">
+      <span class="slider-val" id="lab-rl-val">0</span>
+    </div>
+    <div class="lab-row">
+      <span class="selector-label">Rumble R</span>
+      <input type="range" id="lab-rr" min="0" max="255" value="0">
+      <span class="slider-val" id="lab-rr-val">0</span>
+    </div>
+
+    <div class="lab-row lab-actions">
+      <button id="lab-hold" class="toggle-pill">Hold</button>
+      <button id="lab-pulse" class="pill">Pulse 150ms</button>
+      <button id="lab-off" class="pill">Off</button>
+    </div>
+  </div><!-- /trigger tab -->
+
+  <!-- Racing tab -->
+  <div class="lab-tab-content" data-tab="racing">
+    <div class="lab-hint" id="racing-lab-hint">
+      Pull L2 (brake) and R2 (throttle) while you drag. Live preview applies the
+      curve instantly. Save to make it your Racing profile.
+    </div>
+
+    <div class="lab-section-label">Start from a preset</div>
+    <div id="racing-presets">
+      <button class="lab-preset" data-rc-preset="light">Light</button>
+      <button class="lab-preset" data-rc-preset="medium">Medium</button>
+      <button class="lab-preset" data-rc-preset="hard">Hard</button>
+      <button class="lab-preset" data-rc-preset="max">Max</button>
+    </div>
+
+    <div class="rc-grid">
+      <div class="lab-section-label rc-span">Brake (L2)</div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Start force</span>
+          <input type="range" id="rc-brake-start" min="0" max="255" value="158">
+          <span class="slider-val" id="rc-brake-start-val">158</span>
+        </div>
+        <span class="rc-knob-desc">Resistance the instant you touch the brake.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">End force</span>
+          <input type="range" id="rc-brake-end" min="0" max="255" value="255">
+          <span class="slider-val" id="rc-brake-end-val">255</span>
+        </div>
+        <span class="rc-knob-desc">Resistance at full brake pressure.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Curve</span>
+          <input type="range" id="rc-brake-exp" min="10" max="30" value="19">
+          <span class="slider-val" id="rc-brake-exp-val">1.9</span>
+        </div>
+        <span class="rc-knob-desc">Low = linear. High = bite ramps in late.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Bite point</span>
+          <input type="range" id="rc-feather-end" min="4" max="140" value="38">
+          <span class="slider-val" id="rc-feather-end-val">38</span>
+        </div>
+        <span class="rc-knob-desc">Where the soft zone ends and resistance bites. Low = bites early.</span>
+      </div>
+
+      <div class="lab-section-label rc-span">Throttle (R2)</div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Start force</span>
+          <input type="range" id="rc-throttle-start" min="0" max="255" value="58">
+          <span class="slider-val" id="rc-throttle-start-val">58</span>
+        </div>
+        <span class="rc-knob-desc">Resistance the instant you touch the gas.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">End force</span>
+          <input type="range" id="rc-throttle-end" min="0" max="255" value="172">
+          <span class="slider-val" id="rc-throttle-end-val">172</span>
+        </div>
+        <span class="rc-knob-desc">Resistance at full throttle.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Curve</span>
+          <input type="range" id="rc-throttle-exp" min="10" max="30" value="14">
+          <span class="slider-val" id="rc-throttle-exp-val">1.4</span>
+        </div>
+        <span class="rc-knob-desc">Low = linear. High = builds in late.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Engine rumble</span>
+          <input type="range" id="rc-engine-texture" min="0" max="160" value="40">
+          <span class="slider-val" id="rc-engine-texture-val">40</span>
+        </div>
+        <span class="rc-knob-desc">Deep low-motor rumble that rises with throttle. High = chest-thump.</span>
+      </div>
+
+      <div class="lab-section-label rc-span">Drivetrain feel <span class="rc-span-note">· applies live to Racing</span></div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Weight</span>
+          <input type="range" id="rc-dt-weight" min="0" max="100" value="40">
+          <span class="slider-val" id="rc-dt-weight-val">40</span>
+        </div>
+        <span class="rc-knob-desc">Drivetrain inertia. High = revs build &amp; settle with more momentum on ease-in and lift-off.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Take-up</span>
+          <input type="range" id="rc-dt-takeup" min="16" max="110" value="42">
+          <span class="slider-val" id="rc-dt-takeup-val">42</span>
+        </div>
+        <span class="rc-knob-desc">Depth of the soft engagement zone off rest, like clutch bite. High = longer take-up.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Idle chug</span>
+          <input type="range" id="rc-dt-idle" min="3" max="16" value="7">
+          <span class="slider-val" id="rc-dt-idle-val">7 Hz</span>
+        </div>
+        <span class="rc-knob-desc">Pulse rate just off idle. Low = chunkier, lumpier low-rev chug.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Redline</span>
+          <input type="range" id="rc-dt-red" min="16" max="44" value="26">
+          <span class="slider-val" id="rc-dt-red-val">26 Hz</span>
+        </div>
+        <span class="rc-knob-desc">Pulse rate at full throttle. High = faster, smoother top-end flutter.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Engine load</span>
+          <input type="range" id="rc-dt-load" min="0" max="100" value="50">
+          <span class="slider-val" id="rc-dt-load-val">50</span>
+        </div>
+        <span class="rc-knob-desc">Driveline strain. The engine pulls harder when revs lag the throttle, plus a take-up thunk on tip-in. High = more torque-to-the-rear feel.</span>
+      </div>
+
+      <!-- Live tach: revs + driveline load, so you can see rev-matching respond -->
+      <div class="rc-tach rc-span">
+        <div class="rc-tach-row">
+          <span class="rc-tach-label">RPM</span>
+          <div class="rc-tach-track"><div id="rc-tach-rpm" class="rc-tach-fill"></div></div>
+        </div>
+        <div class="rc-tach-row">
+          <span class="rc-tach-label">LOAD</span>
+          <div class="rc-tach-track"><div id="rc-tach-load" class="rc-tach-fill load"></div></div>
+        </div>
+      </div>
+
+      <div class="lab-section-label rc-span">ABS &amp; gear</div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">ABS pump rate</span>
+          <input type="range" id="rc-abs-freq" min="2" max="12" value="5">
+          <span class="slider-val" id="rc-abs-freq-val">5</span>
+        </div>
+        <span class="rc-knob-desc">Pedal pumps per second. Low = slow, distinct shoves you can feel.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">ABS delay</span>
+          <input type="range" id="rc-abs-delay" min="3" max="40" value="18">
+          <span class="slider-val" id="rc-abs-delay-val">18</span>
+        </div>
+        <span class="rc-knob-desc">Full-brake frames before ABS starts pumping.</span>
+      </div>
+
+      <div class="rc-knob">
+        <div class="rc-knob-top">
+          <span class="selector-label">Shift force</span>
+          <input type="range" id="rc-shift-force" min="0" max="255" value="255">
+          <span class="slider-val" id="rc-shift-force-val">255</span>
+        </div>
+        <span class="rc-knob-desc">Kick strength on each gear shift.</span>
+      </div>
+
+      <div class="lab-section-label rc-span">Steering FX</div>
+
+      <div class="rc-knob rc-span">
+        <button id="rc-tire-scrub" class="toggle-pill">Tire scrub</button>
+        <span class="rc-knob-desc">Steering angle and pedal load add high-freq grain on the right motor. Feels like tires scrubbing.</span>
+      </div>
+
+      <div class="rc-knob rc-span">
+        <button id="rc-throttle-light" class="toggle-pill">Throttle lightening</button>
+        <span class="rc-knob-desc">Hard steering at full throttle eases throttle resistance, mimicking wheelspin and traction loss.</span>
+      </div>
+    </div>
+
+    <div class="lab-row lab-actions">
+      <button id="rc-preview" class="toggle-pill">Live preview</button>
+      <button id="rc-save" class="pill">Save as my Racing</button>
+      <button id="rc-clear" class="pill">Use presets</button>
+    </div>
+    <div id="rc-status" class="lab-hint"></div>
+  </div><!-- /racing tab -->
+
+  <!-- Melee tab — Dead Island 2 weapon feels (preview) -->
+  <div class="lab-tab-content hidden" data-tab="melee">
+    <div class="lab-hint">Dead Island 2 melee feels — tap to test the swing-connect impact.
+      More games as I can test them.</div>
+    <div class="lab-live">
+      <button class="toggle-pill lab-live-toggle" data-profile="melee">⚡ Live preview: OFF</button>
+      <span class="lab-live-hint">Routes the real engine to Melee. Pull R2 to swing; release at full draw to connect.</span>
+    </div>
+    <div class="lab-section-label">Weapon (live)</div>
+    <div class="lab-preset-grid" id="melee-weapon-sel"></div>
+    <div class="feel-editor" id="melee-feel-editor"></div>
+    <div class="lab-row lab-actions feel-actions" id="melee-feel-actions" style="display:none">
+      <button class="pill feel-save" data-kind="melee">💾 Save feel</button>
+      <button class="pill feel-reset" data-kind="melee">↺ Reset all to defaults</button>
+    </div>
+
+    <div class="lab-section-label">Melee presets</div>
+    <div class="lab-preset-grid" id="melee-presets"></div>
+    <div class="lab-row lab-actions"><button class="pill lab-stop">■ Stop</button></div>
+  </div><!-- /melee tab -->
+
+  <!-- Minecraft tab — per-tool + block feels (preview) -->
+  <div class="lab-tab-content hidden" data-tab="minecraft">
+    <div class="lab-hint">Preview the per-item feels without the mod connected. Real
+      gameplay drives these live from the Fabric bridge; these buttons fire a facsimile.</div>
+    <div class="lab-live">
+      <button class="toggle-pill lab-live-toggle" data-profile="minecraft">⚡ Live preview: OFF</button>
+      <span class="lab-live-hint">Routes the real engine to Minecraft and synthesizes events from your controller:
+        R2 = mine / draw bow / eat, L2 = shield block, □ = attack, △ = take damage, ○ = heal.</span>
+    </div>
+    <div class="lab-section-label">Held item (live)</div>
+    <div class="lab-preset-grid" id="mc-item-sel"></div>
+
+    <div class="lab-section-label">Tools &amp; combat</div>
+    <div class="lab-preset-grid" id="mc-tool-presets"></div>
+    <div class="lab-section-label">Blocks &amp; survival</div>
+    <div class="lab-preset-grid" id="mc-block-presets"></div>
+    <div class="lab-row lab-actions"><button class="pill lab-stop">■ Stop</button></div>
+  </div><!-- /minecraft tab -->
+
+  <!-- Audio tab — reactive band test pulses (preview) -->
+  <div class="lab-tab-content hidden" data-tab="audio">
+    <div class="lab-hint">Audio mode reacts to live sound. The two-band haptic EQ
+      (Sub → left, Engine → right) lives in the main view's Audio section — switch to
+      the Audio profile to tune it with live band meters.</div>
+    <div class="lab-live">
+      <button class="toggle-pill lab-live-toggle" data-profile="audio">⚡ Live preview: OFF</button>
+      <span class="lab-live-hint">Routes the real engine to Audio. Play sound and the motors react live.</span>
+    </div>
+    <div class="lab-section-label">Band test</div>
+    <div class="lab-preset-grid" id="audio-presets"></div>
+    <div class="lab-row lab-actions"><button class="pill lab-stop">■ Stop</button></div>
+  </div><!-- /audio tab -->
+
+  <!-- Static tab — fixed lightbar, no haptics -->
+  <div class="lab-tab-content hidden" data-tab="static">
+    <div class="lab-hint">Static is a fixed-lightbar profile with no trigger or rumble
+      effects, so there is nothing to tune here. Switch the app to the Static profile to
+      set a calm idle glow.</div>
+  </div><!-- /static tab -->
+
+  </div><!-- /lab-panel -->
+
+  <!-- ── Motion — tilt steering + gyro aim ─────────────────────────────────── -->
+  <div id="motion-panel" class="hidden">
+    <div id="motion-header">
+      <span id="motion-title">🎮 Motion</span>
+      <span id="motion-sub">Tilt to steer · gyro to aim</span>
+      <button id="motion-close" title="Close">✕</button>
+    </div>
+
+    <!-- Live visualization: wheel rotates with tilt, reticle dot tracks gyro -->
+    <div id="motion-viz">
+      <div class="viz-cell">
+        <svg id="wheel-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+          <g id="wheel-rotor" transform="rotate(0 60 60)">
+            <circle cx="60" cy="60" r="46" class="wheel-rim"/>
+            <circle cx="60" cy="60" r="9"  class="wheel-hub"/>
+            <line x1="60" y1="60" x2="60"  y2="15" class="wheel-spoke"/>
+            <line x1="60" y1="60" x2="22"  y2="82" class="wheel-spoke"/>
+            <line x1="60" y1="60" x2="98"  y2="82" class="wheel-spoke"/>
+            <line x1="14" y1="60" x2="34"  y2="60" class="wheel-mark"/>
+            <line x1="106" y1="60" x2="86" y2="60" class="wheel-mark"/>
+          </g>
+          <line x1="60" y1="6" x2="60" y2="16" class="wheel-top"/>
+        </svg>
+        <div class="viz-label">TILT <span id="steer-tilt-val">0°</span></div>
+      </div>
+      <div class="viz-cell">
+        <svg id="aim-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+          <rect x="6" y="6" width="108" height="108" rx="8" class="aim-box"/>
+          <line x1="60" y1="20" x2="60" y2="100" class="aim-cross"/>
+          <line x1="20" y1="60" x2="100" y2="60" class="aim-cross"/>
+          <circle id="aim-dot" cx="60" cy="60" r="7" class="aim-dot"/>
+        </svg>
+        <div class="viz-label">AIM <span id="aim-state-val">off</span></div>
+      </div>
+    </div>
+
+    <!-- Steering controls -->
+    <div class="motion-section">
+      <div class="motion-section-head">
+        <button id="steer-enable" class="toggle-pill">Tilt Steering: OFF</button>
+        <span class="motion-hint">Rolls the virtual Xbox left stick. Great for Forza.</span>
+      </div>
+      <div class="motion-grid">
+        <div class="m-row">
+          <span class="selector-label">Axis</span>
+          <div class="btn-group" id="steer-axis-btns">
+            <button class="pill" data-axis="0">Roll (L/R)</button>
+            <button class="pill" data-axis="1">Pitch (F/B)</button>
+          </div>
+        </div>
+        <div class="m-row">
+          <span class="selector-label">Sensitivity</span>
+          <input type="range" id="steer-sens" min="20" max="300" value="100">
+          <span class="slider-val" id="steer-sens-val">1.00</span>
+        </div>
+        <div class="m-row">
+          <span class="selector-label">Dead zone</span>
+          <input type="range" id="steer-dz" min="0" max="20" value="3">
+          <span class="slider-val" id="steer-dz-val">3°</span>
+        </div>
+        <div class="m-row">
+          <span class="selector-label">Full-lock angle</span>
+          <input type="range" id="steer-max" min="15" max="80" value="45">
+          <span class="slider-val" id="steer-max-val">45°</span>
+        </div>
+        <div class="m-row">
+          <button id="steer-invert" class="toggle-pill">Invert</button>
+          <span class="motion-hint">Flip if you steer the wrong way.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aim controls -->
+    <div class="motion-section">
+      <div class="motion-section-head">
+        <button id="aim-enable" class="toggle-pill">Gyro Aim: OFF</button>
+        <span class="motion-hint">Moves the mouse from gyro. Pairs with mouse-aim shooters.</span>
+      </div>
+      <div class="motion-grid">
+        <div class="m-row">
+          <span class="selector-label">Activation</span>
+          <div class="btn-group" id="aim-mode-btns">
+            <button class="pill" data-mode="0">Always</button>
+            <button class="pill" data-mode="1">Hold ▢</button>
+            <button class="pill" data-mode="2">Toggle ▢</button>
+          </div>
+        </div>
+        <div class="m-row">
+          <span class="selector-label">Sens X</span>
+          <input type="range" id="aim-sx" min="1" max="60" value="12">
+          <span class="slider-val" id="aim-sx-val">12</span>
+        </div>
+        <div class="m-row">
+          <span class="selector-label">Sens Y</span>
+          <input type="range" id="aim-sy" min="1" max="60" value="12">
+          <span class="slider-val" id="aim-sy-val">12</span>
+        </div>
+        <div class="m-row">
+          <span class="selector-label">Dead zone</span>
+          <input type="range" id="aim-dz" min="0" max="80" value="15">
+          <span class="slider-val" id="aim-dz-val">1.5</span>
+        </div>
+        <div class="m-row">
+          <button id="aim-invert" class="toggle-pill">Invert Y</button>
+          <span class="motion-hint">▢ = touchpad click is the Hold/Toggle button.</span>
+        </div>
+      </div>
+    </div>
+  </div><!-- /motion-panel -->
+
+  <div id="statusbar">
+    <span id="shift-info"></span>
+    <span id="telem-status" class="telem-off" title="Forza Data Out telemetry">⬤ Telemetry off</span>
+    <span id="error-msg"></span>
+    <span id="key-hints" class="key-hints-text"></span>
+    <span id="app-version" class="app-version"></span>
+  </div>
+
+</div><!-- /app -->
+
+<script src="main.js"></script>
+</body>
+</html>

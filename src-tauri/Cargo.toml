@@ -1,0 +1,40 @@
+[package]
+name    = "dualsense-haptics"
+version = "0.3.0"
+edition = "2021"
+
+[lib]
+name       = "dualsense_haptics_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri        = { version = "2", features = ["devtools"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+ureq         = { version = "2", features = ["json"] }
+dirs         = "5"
+sha2         = "0.10"
+hex          = "0.4"
+crc32fast    = "1"   # CRC-32 (IEEE) appended to DualSense Bluetooth output reports
+
+# hidapi: the macos-shared-device feature is macOS-only (lets games keep input while
+# we hold the device). Windows/Linux use the default backend.
+[target.'cfg(target_os = "macos")'.dependencies]
+hidapi = { version = "2", features = ["macos-shared-device"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+hidapi = { version = "2" }
+
+# Windows-only: ViGEmBus client for the Xbox-translated output mode. Creates a virtual
+# Xbox 360 (XInput) pad that we feed the DualSense's inputs into, so XInput-only games
+# (Forza, etc.) detect the controller. Pair with HidHide to cloak the real DualSense.
+[target.'cfg(windows)'.dependencies]
+# unstable_xtarget_notification: lets us subscribe to the rumble the game sends to
+# the virtual pad, so we can re-expand it into DualSense haptics (passthrough).
+vigem-client = { version = "0.1", features = ["unstable_xtarget_notification"] }
+# WASAPI loopback capture for the Audio profile — taps whatever is playing on the
+# default output device, no virtual audio driver (BlackHole is macOS-only) needed.
+cpal = "0.15"
