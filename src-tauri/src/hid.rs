@@ -109,6 +109,38 @@ impl OutputMode {
     }
 }
 
+// ── Game source ──────────────────────────────────────────────────────────────
+// Selects which simulation engine feeds telemetry into the shared AppState.t_*
+// fields. Only one bridge is active at a time.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GameSource {
+    None,
+    Forza,
+    F123,
+    Assetto,
+}
+
+impl GameSource {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "forza"   => Self::Forza,
+            "f123"    => Self::F123,
+            "assetto" => Self::Assetto,
+            _         => Self::None,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Forza   => "forza",
+            Self::F123    => "f123",
+            Self::Assetto => "assetto",
+            Self::None    => "none",
+        }
+    }
+}
+
 // ─── Minecraft held-item category ───────────────────────────────────────────
 // The Fabric mod sends the category of the currently held item each time it
 // changes. The app maps that to a lightbar color (Phase 1 proof of life) and,
@@ -546,6 +578,7 @@ pub struct AppState {
     // User settings
     pub profile:       Profile,
     pub output_mode:   OutputMode,  // DualSense (native) vs Xbox (virtual XInput, Windows)
+    pub game_source: GameSource, // active telemetry feed (None = simulated engine)
     pub strength_idx:  usize,
     pub gun_weapon:    usize, // index into `weapons` — selected gun feel
     pub melee_weapon:  usize, // index into `melee_weapons` — selected melee feel
@@ -793,6 +826,7 @@ impl Default for AppState {
             output_mode:         OutputMode::Xbox,
             #[cfg(not(windows))]
             output_mode:         OutputMode::Dualsense,
+            game_source:         GameSource::None,
             strength_idx:        2,
             gun_weapon:          0,            // pistol
             melee_weapon:        0,            // fists

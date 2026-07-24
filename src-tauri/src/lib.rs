@@ -12,11 +12,17 @@ mod hidhide;
 #[cfg(windows)]
 mod xinput;
 
-use hid::{AppState, Edition, Profile, STRENGTHS, WEAPONS};
+use hid::{AppState, Edition, GameSource, Profile, STRENGTHS, WEAPONS};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
+
+/// Holds the stop flag for the active telemetry bridge so we can tear it
+/// down cleanly when the user switches games.
+struct BridgeManager {
+    stop: Option<Arc<AtomicBool>>,
+}
 
 /// Return type for init_session — includes edition so JS knows what tier was granted.
 #[derive(Serialize)]
@@ -91,6 +97,7 @@ fn persist(s: &AppState) {
         throttle_light_on: s.throttle_light_on,
         drivetrain_profile: Some(s.drivetrain_profile_idx),
         drivetrain_auto: s.drivetrain_auto,
+        game_source: Some(s.game_source.as_str().to_string()),
         motion: Some(settings::MotionSettings {
             steer_enabled:  s.motion.steer_enabled,
             steer_sens:     s.motion.steer_sens,
@@ -668,6 +675,9 @@ pub fn run() {
             }
         }
         s.drivetrain_auto = saved.drivetrain_auto;
+        if let Some(gs) = saved.game_source {
+            s.game_source = GameSource::from_str(&gs);
+        }
         if let Some(m) = saved.motion {
             s.motion.steer_enabled  = m.steer_enabled;
             s.motion.steer_sens     = m.steer_sens;
@@ -701,12 +711,58 @@ pub fn run() {
                 t.engine_gain = a.engine_gain;
                 t.gate        = a.gate;
             }
-        }
     }
+}
+
+/// Spawn the telemetry bridge for the given game source. Returns the stop flag
+/// so the caller can tear it down later.
+fn spawn_bridge_for(source: GameSource, state: Arc<Mutex<AppState>>) -> Option<Arc<AtomicBool>> {
+    match source {
+        GameSource::Forza => {
+            let stop = Arc::new(AtomicBool::new(false));
+            forza::spawn_bridge(state, stop.clone());
+            Some(stop)
+        }
+        GameSource::F123 => {
+            let stop = Arc::new(AtomicBool::new(false));
+            f123::spawn(state, stop.clone());
+            Some(stop)
+        }
+        GameSource::Assetto => {
+            let stop = Arc::new(AtomicBool::new(false));
+            acc::spawn(state, stop.clone());
+            Some(stop)
+        }
+        GameSource::None => None,
+    }
+}
+
+#[tauri::command]
+fn set_game_source(
+    state: State<SharedState>,
+    bridge: State<Arc<Mutex<BridgeManager>>>,
+    source: String,
+) -> String {
+    let gs = GameSource::from_str(&source);
+    let mut s = state.lock().unwrap();
+    s.game_source = gs;
+    persist(&s);
+    drop(s);
+
+    // Tear down old bridge, spawn new one.
+    let mut bm = bridge.lock().unwrap();
+    if let Some(stop) = bm.stop.take() {
+        stop.store(true, Ordering::SeqCst);
+    }
+    bm.stop = spawn_bridge_for(gs, state.inner().clone());
+
+    gs.as_str().to_string()
+}
 
     tauri::Builder::default()
         .manage(app_state.clone())
         .manage(LicenseGate::new())
+        .manage(Arc::new(Mutex::new(BridgeManager { stop: None })))
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_profile,
@@ -734,6 +790,7 @@ pub fn run() {
             set_drivetrain,
             set_drivetrain_profile,
             set_drivetrain_auto,
+            set_game_source,
             set_audio_tune,
         ])
         .setup(move |app| {
@@ -746,10 +803,8 @@ pub fn run() {
             // Always runs; harmless when no mod is connected.
             mc::spawn_bridge(app_state.clone());
 
-            // Forza telemetry bridge — UDP listener for the game's Data Out feed, so
-            // Racing haptics can run off real RPM / acceleration / tire slip. Harmless
-            // when nothing is broadcasting.
-            forza::spawn_bridge(app_state.clone(), Arc::new(AtomicBool::new(false)));
+            // Telemetry bridge — spawn whichever game is selected (or none).
+            spawn_bridge_for(app_state.lock().unwrap().game_source, app_state.clone());
 
             // Explicitly size and show the main window. On Windows the window can
             // get stuck at a 16x16 placeholder if WebView2 initializes slowly.

@@ -519,6 +519,18 @@
         <span class="rc-knob-desc">Classifies the drivetrain from Forza telemetry (slip variance and torque bias). Overrides manual selection while active.</span>
       </div>
 
+      <div class="lab-section-label rc-span">Telemetry source</div>
+
+      <div class="rc-knob rc-span">
+        <select id="rc-game-source" class="lab-select">
+          <option value="none">None (simulated engine)</option>
+          <option value="forza">Forza Horizon / Motorsport</option>
+          <option value="f123">F1 23</option>
+          <option value="assetto">Assetto Corsa</option>
+        </select>
+        <span class="rc-knob-desc">Selects which game feeds real telemetry (RPM, slip, suspension) into Racing haptics. Switches the UDP bridge live.</span>
+      </div>
+
       <div class="lab-section-label rc-span">ABS &amp; gear</div>
 
       <div class="rc-knob">

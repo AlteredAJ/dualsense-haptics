@@ -1598,6 +1598,12 @@ dtAutoBtn?.addEventListener('click', () => {
   invoke('set_drivetrain_auto', { enabled: dtAutoState }).catch(() => {});
 });
 
+// ── Game source ─────────────────────────────────────────────────────────
+const gameSourceSel = document.getElementById('rc-game-source');
+gameSourceSel?.addEventListener('change', () => {
+  invoke('set_game_source', { source: gameSourceSel.value }).catch(() => {});
+});
+
 rcPreviewBtn.addEventListener('click', () => {
   rcState.preview = !rcState.preview;
   rcPreviewBtn.classList.toggle('on', rcState.preview);

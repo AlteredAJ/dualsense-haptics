@@ -22,6 +22,8 @@ pub struct SavedSettings {
     #[serde(default)]
     pub drivetrain_auto: bool,
     #[serde(default)]
+    pub game_source: Option<String>,
+    #[serde(default)]
     pub motion:      Option<MotionSettings>,
     #[serde(default)]
     pub passthrough: Option<PassthroughSettings>,
