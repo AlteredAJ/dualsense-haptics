@@ -113,8 +113,22 @@ fn settings_path() -> PathBuf {
 
 pub fn load() -> SavedSettings {
     let path = settings_path();
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    serde_json::from_str(&text).unwrap_or_default()
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[settings] read {} failed: {e} — using defaults", path.display());
+            return SavedSettings::default();
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[settings] parse {} failed: {e} — backing up to .bak and using defaults", path.display());
+            let bak = path.with_extension("json.bak");
+            let _ = std::fs::write(&bak, &text);
+            SavedSettings::default()
+        }
+    }
 }
 
 pub fn save(data: &SavedSettings) {

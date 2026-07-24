@@ -732,7 +732,7 @@ pub fn run() {
             // Forza telemetry bridge — UDP listener for the game's Data Out feed, so
             // Racing haptics can run off real RPM / acceleration / tire slip. Harmless
             // when nothing is broadcasting.
-            forza::spawn_bridge(app_state.clone());
+            forza::spawn_bridge(app_state.clone(), Arc::new(AtomicBool::new(false)));
 
             // Explicitly size and show the main window. On Windows the window can
             // get stuck at a 16x16 placeholder if WebView2 initializes slowly.

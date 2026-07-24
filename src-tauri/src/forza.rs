@@ -20,6 +20,7 @@ use crate::signal::{
 use std::io::Write;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -58,19 +59,21 @@ fn gear_offset(len: usize) -> Option<usize> {
     }
 }
 
-pub fn spawn_bridge(state: Arc<Mutex<AppState>>) {
+pub fn spawn_bridge(state: Arc<Mutex<AppState>>, stop: Arc<AtomicBool>) {
     for &port in FORZA_PORTS {
         let state = state.clone();
-        thread::spawn(move || receiver_loop(state, port));
+        let stop = stop.clone();
+        thread::spawn(move || receiver_loop(state, stop, port));
     }
-    thread::spawn(move || watchdog_loop(state));
+    thread::spawn(move || watchdog_loop(state, stop));
 }
 
 /// One UDP receiver per candidate port. On a valid packet it stamps `t_last_rx` and
 /// applies the data; it never clears the connection flags — that's the watchdog's job,
 /// so a quiet port can't stomp a busy one.
-fn receiver_loop(state: Arc<Mutex<AppState>>, port: u16) {
+fn receiver_loop(state: Arc<Mutex<AppState>>, stop: Arc<AtomicBool>, port: u16) {
     loop {
+        if stop.load(Ordering::Relaxed) { return; }
         let addr = format!("0.0.0.0:{port}");
         let socket = match UdpSocket::bind(&addr) {
             Ok(s) => s,
@@ -86,6 +89,7 @@ fn receiver_loop(state: Arc<Mutex<AppState>>, port: u16) {
         let mut buf = [0u8; 1024];
         let mut diag_first = true;
         loop {
+            if stop.load(Ordering::Relaxed) { return; }
             match socket.recv_from(&mut buf) {
                 Ok((len, from)) if len >= 232 => {
                     let race_on = i32_at(&buf, 0) != 0;
@@ -118,8 +122,9 @@ fn receiver_loop(state: Arc<Mutex<AppState>>, port: u16) {
 /// within STALE_AFTER, both the connection and live-race flags are cleared and the
 /// engine falls back to the inferred model. `t_last_rx` lives inside AppState so
 /// the staleness check and flag-clear happen under one lock — no TOCTOU window.
-fn watchdog_loop(state: Arc<Mutex<AppState>>) {
+fn watchdog_loop(state: Arc<Mutex<AppState>>, stop: Arc<AtomicBool>) {
     loop {
+        if stop.load(Ordering::Relaxed) { return; }
         thread::sleep(Duration::from_millis(250));
         if let Ok(mut s) = state.lock() {
             let stale = s.t_last_rx
