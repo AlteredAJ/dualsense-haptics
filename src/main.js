@@ -1,7 +1,11 @@
 const { invoke } = window.__TAURI__.core;
 const { listen }  = window.__TAURI__.event;
+const { getCurrentWindow } = window.__TAURI__.window;
 
-// ─── Version display + update check ──────────────────────────────────────────
+// ─── Window controls (frameless) ────────────────────────────────────────────
+const appWindow = getCurrentWindow();
+document.getElementById('win-minimize')?.addEventListener('click', () => appWindow.minimize());
+document.getElementById('win-close')?.addEventListener('click', () => appWindow.close());
 
 invoke('get_version').then(v => {
   const el = document.getElementById('app-version');

@@ -192,7 +192,7 @@ html, body {
    now hidden. Interactive children opt back out below. */
 #header [data-tauri-drag-region] { -webkit-app-region: drag; }
 #header button, #header a, #header .pill,
-#header-right, #conn-status { -webkit-app-region: no-drag; }
+#header-right, #conn-status, .win-ctrl { -webkit-app-region: no-drag; }
 #header-title {
   font-size: var(--fs-title); font-weight: 600; letter-spacing: 0.02em;
   display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -208,6 +208,13 @@ html, body {
   transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 #header-right { display: flex; align-items: center; gap: 12px; }
+.win-ctrl {
+  background: none; border: none; color: var(--fg-muted); font-size: 14px;
+  padding: 0 8px; cursor: pointer; line-height: 1; border-radius: 4px;
+  -webkit-app-region: no-drag;
+}
+.win-ctrl:hover { background: #ffffff15; color: var(--fg); }
+.win-close-btn:hover { background: #e81123; color: #fff; }
 
 #conn-status { font-size: 12px; }
 #conn-status.connected    { color: var(--green); }
