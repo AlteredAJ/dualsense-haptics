@@ -25,9 +25,11 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn cli_path() -> Option<PathBuf> {
     let candidates = [
-        r"C:\Program Files\Nefarius Software Solutions\HidHide\x64\HidHideCLI.exe",
         r"C:\Program Files\Nefarius Software Solutions e.U\HidHide\x64\HidHideCLI.exe",
+        r"C:\Program Files\Nefarius Software Solutions\HidHide\x64\HidHideCLI.exe",
         r"C:\Program Files\Nefarius Software Solutions\HidHide\HidHideCLI.exe",
+        r"C:\Program Files (x86)\Nefarius Software Solutions e.U\HidHide\x64\HidHideCLI.exe",
+        r"C:\Program Files (x86)\Nefarius Software Solutions\HidHide\HidHideCLI.exe",
     ];
     candidates.iter().map(PathBuf::from).find(|p| p.exists())
 }
@@ -95,10 +97,19 @@ pub fn enable() -> Result<(), String> {
 
 /// Un-cloak: stop hiding the DualSense and turn cloaking off so other apps see it again.
 pub fn disable() -> Result<(), String> {
-    let cli = cli_path().ok_or("HidHideCLI.exe not found")?;
+    let cli = cli_path().ok_or_else(|| {
+        eprintln!("[hidhide] CLI not found — cannot disable cloaking; the controller may stay hidden until the system is restarted or HidHide is configured manually");
+        "HidHideCLI.exe not found".to_string()
+    })?;
     let listing = run(&cli, &["--dev-gaming"]).unwrap_or_default();
     for path in parse_sony_instances(&listing) {
         let _ = run(&cli, &["--dev-unhide", &path]);
     }
-    run(&cli, &["--cloak-off"]).map(|_| ())
+    match run(&cli, &["--cloak-off"]) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("[hidhide] cloak-off failed: {e}");
+            Err(e)
+        }
+    }
 }

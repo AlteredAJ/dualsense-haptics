@@ -1,4 +1,8 @@
 use serde::Serialize;
+use crate::signal::{
+    self, AMBIENT_RPM_CLAMP, LATERAL_SLIP_CRITICAL, PNEUMATIC_DECAY,
+    SLEW_MAX_CHANGE, SURFACE_STEREO_SCALE,
+};
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -343,8 +347,14 @@ const THROTTLE_FEATHER_END:   u8 = 42;  // ~17% travel — end of throttle feath
 // fades in from DROOP and reaches full over the next SPAN. Deliberately low so it
 // only ever kills the genuinely-airborne case; grounded driving is untouched. To
 // disable, set DROOP negative (gate always returns 1.0).
-const LOAD_GATE_DROOP:        f32 = 0.04;
+const LOAD_GATE_DROOP:        f32 = 0.05;
 const LOAD_GATE_SPAN:         f32 = 0.14;
+// Aerodynamic downforce on the brake: at speed the pedal firms up because aero load
+// pushes the tyres harder into the tarmac, requiring higher hydraulic pressure.
+// Linear ramp from AERO_MIN_SPEED_MS (no boost) to AERO_MAX_SPEED_MS (full boost).
+const AERO_MIN_SPEED_MS:      f32 = 10.0;  // m/s (~36 km/h) — below this no aero effect
+const AERO_MAX_SPEED_MS:      f32 = 80.0;  // m/s (~288 km/h) — full aero stiffness
+const AERO_MAX_BOOST:         f32 = 0.30;  // +30% resistance at full aero speed
 // Starting-resistance floors: the brake/throttle feather zones begin at this % of
 // their start force the instant the trigger arms past the deadzone, instead of
 // ramping up from ~0. Removes the "empty travel" before the racing effects engage.
@@ -362,6 +372,8 @@ const ABS_DELAY_FRAMES:       u8 = 18;  // ~300ms at 60fps before ABS fires
 const ABS_FREQ:               u8 = 5;   // Hz — pedal-pump rate; low so each shove is distinct, not a buzz
 const ENGINE_IDLE_HZ:        f32 = 7.0;  // left-motor pulse rate at just-off-idle throttle — lumpy
 const ENGINE_RED_HZ:         f32 = 26.0; // pulse rate at full throttle — fast flutter (smooth high rev)
+const REVLIM_BOUNCE_HZ:      f32 = 5.0;  // Hz — ECU cut/restore cadence at the rev limiter
+const REVLIM_RPM_THRESHOLD:  f32 = 0.99; // normalised RPM at which the bounce engages
 const GUN_AUTO_HZ:            u8 = 13;   // ~800 RPM, M4 full-auto — default auto rate
 const GUN_BREAK_POS:          u8 = 110;  // 43% travel — semi trigger click point
 const GUN_AUTO_BREAK_POS:     u8 = 60;   // 24% travel — auto: resistance → vibration
@@ -438,6 +450,51 @@ pub fn drivetrain_inertia(weight: u8) -> (f32, f32) {
     (attack, settle)
 }
 
+/// DSP parameters that vary per drivetrain architecture. Predefined profiles for
+/// common archetypes; the user picks one in the UI and it tunes the slip deadzone,
+/// crossover frequencies, and flutter range to match the vehicle's character.
+///
+/// The `Default` profile (index 0) reproduces the canonical reference defaults
+/// from `signal.rs` constants (`SLIP_DEADZONE_FRAMES`, `SLIP_FLUTTER_*`,
+/// `SLIP_CROSSOVER_DEEP_HZ`).  Those constants are no longer imported at runtime
+/// — this table is the single source of truth for all drivetrain DSP parameters.
+#[derive(Clone, Copy)]
+pub struct DrivetrainProfile {
+    pub label:                 &'static str,
+    pub slip_deadzone_frames:  u16,   // min frames before slip flutter fires
+    pub slip_flutter_lo_hz:    f32,   // pre-crossover flutter minimum freq
+    pub slip_flutter_hi_hz:    f32,   // pre-crossover flutter maximum freq
+    pub slip_crossover_deep_hz: f32,  // post-crossover deep-judder freq
+}
+
+pub const DRIVETRAIN_PROFILES: [DrivetrainProfile; 5] = [
+    DrivetrainProfile {
+        label: "Default", slip_deadzone_frames: 2,
+        slip_flutter_lo_hz: 50.0, slip_flutter_hi_hz: 80.0,
+        slip_crossover_deep_hz: 35.0,
+    },
+    DrivetrainProfile {
+        label: "Mechanical AWD", slip_deadzone_frames: 2,
+        slip_flutter_lo_hz: 45.0, slip_flutter_hi_hz: 75.0,
+        slip_crossover_deep_hz: 30.0,
+    },
+    DrivetrainProfile {
+        label: "Hybrid Electric", slip_deadzone_frames: 3,
+        slip_flutter_lo_hz: 55.0, slip_flutter_hi_hz: 85.0,
+        slip_crossover_deep_hz: 28.0,
+    },
+    DrivetrainProfile {
+        label: "RWD", slip_deadzone_frames: 2,
+        slip_flutter_lo_hz: 50.0, slip_flutter_hi_hz: 80.0,
+        slip_crossover_deep_hz: 32.0,
+    },
+    DrivetrainProfile {
+        label: "FWD", slip_deadzone_frames: 2,
+        slip_flutter_lo_hz: 55.0, slip_flutter_hi_hz: 75.0,
+        slip_crossover_deep_hz: 35.0,
+    },
+];
+
 /// Motion (gyro + accelerometer) configuration for tilt-steering and gyro aim.
 /// All angles in degrees, rates in degrees/second. Tunable live from the Motion panel.
 #[derive(Clone)]
@@ -510,6 +567,7 @@ pub struct AppState {
     pub ax: i16, pub ay: i16, pub az: i16,   // accelerometer (gravity + motion)
     pub motion: MotionCfg,
     pub drivetrain: DrivetrainFeel,          // Racing engine/throttle feel character
+    pub drivetrain_profile_idx: usize,       // index into DRIVETRAIN_PROFILES
     pub aim_toggle_on: bool,                 // latched state for aim_mode == toggle
     // ── Game rumble passthrough (Xbox output) ─────────────────────────────────
     // Raw motor values the game last sent to the virtual pad (written by the
@@ -584,6 +642,10 @@ pub struct AppState {
     // that climbs with tire slip + surface roughness, so the brake friction tremor and
     // surface grain work even under braking when the engine revs (engine_phase) drop.
     pub road_phase: f32,
+    // Rev-limiter bounce phase (0..1) — advanced at a fixed cadence (REVLIM_BOUNCE_HZ)
+    // when engine RPM is at or near maximum, driving a rhythmic on/off pulse that
+    // simulates the ECU cutting and restoring spark at the electronic rev limiter.
+    pub revlim_phase: f32,
     // Smoothed engine "RPM" (0..1) — chases throttle with inertia so the rev rate
     // doesn't jitter on light feathering and spins down when you lift.
     pub engine_rpm: f32,
@@ -629,6 +691,28 @@ pub struct AppState {
     // left wheels → left grip motor, right wheels → right grip motor.
     pub t_bump_left:     f32,
     pub t_bump_right:    f32,
+    // Signal-processed telemetry (written by forza bridge)
+    pub t_heave:           f32,
+    pub t_grip_mult:       f32,
+    pub t_slip_angle:      f32,
+    pub t_tc_active:       bool,
+    pub t_surface_fl:      f32,
+    pub t_surface_fr:      f32,
+    pub t_surface_rl:      f32,
+    pub t_surface_rr:      f32,
+    pub t_filt_heave:      f32,
+    pub t_filt_susp_fl:    f32,
+    pub t_filt_susp_fr:    f32,
+    pub t_filt_susp_rl:    f32,
+    pub t_filt_susp_rr:    f32,
+    pub t_ewma_slip_angle: f32,
+    pub t_ewma_combined:   f32,
+    pub t_slip_rear_frames:  u16,
+    pub t_slip_front_frames: u16,
+    // Adaptive trigger slew + pneumatic trail (Racing, per-frame)
+    pub l2_resist_slew: u8,
+    pub r2_resist_slew: u8,
+    pub l2_trail_resist: f32,
     // ─── Minecraft bridge state (written by the TCP bridge thread) ───────────
     // mc_item is the category of the currently held item, pushed by the Fabric
     // mod. mc_connected tracks whether the mod is currently piping state.
@@ -711,6 +795,7 @@ impl Default for AppState {
             gx: 0, gy: 0, gz: 0, ax: 0, ay: 0, az: 0,
             motion: MotionCfg::default(),
             drivetrain: DrivetrainFeel::default(),
+            drivetrain_profile_idx: 0,
             aim_toggle_on: false,
             game_rumble_l: 0, game_rumble_r: 0,
             pt_enabled: true, pt_intensity: 1.0,
@@ -741,6 +826,7 @@ impl Default for AppState {
             abs_phase: 0,
             engine_phase: 0.0,
             road_phase: 0.0,
+            revlim_phase: 0.0,
             engine_rpm: 0.0,
             shift_rpm: 0.0,
             eng_load: 0.0,
@@ -754,6 +840,13 @@ impl Default for AppState {
             t_accel_input: 0, t_brake_input: 0,
             t_susp_fl: 0.0, t_susp_fr: 0.0, t_susp_rl: 0.0, t_susp_rr: 0.0,
             t_bump_left: 0.0, t_bump_right: 0.0,
+            t_heave: 0.0, t_grip_mult: 1.0, t_slip_angle: 0.0, t_tc_active: false,
+            t_surface_fl: 0.0, t_surface_fr: 0.0, t_surface_rl: 0.0, t_surface_rr: 0.0,
+            t_filt_heave: 0.0,
+            t_filt_susp_fl: 0.0, t_filt_susp_fr: 0.0, t_filt_susp_rl: 0.0, t_filt_susp_rr: 0.0,
+            t_ewma_slip_angle: 0.0, t_ewma_combined: 0.0,
+            t_slip_rear_frames: 0, t_slip_front_frames: 0,
+            l2_resist_slew: 0, r2_resist_slew: 0, l2_trail_resist: 0.0,
             mc_item:      McItem::Empty,
             mc_connected: false,
             mc_using: false, mc_use_prog: 0.0, mc_mining: false, mc_blocking: false,
@@ -805,6 +898,7 @@ impl AppState {
         self.abs_phase             = 0;
         self.engine_phase          = 0.0;
         self.road_phase            = 0.0;
+        self.revlim_phase          = 0.0;
         self.engine_rpm            = 0.0;
         self.shift_rpm             = 0.0;
         self.mc_attack_frames      = 0;
@@ -1221,16 +1315,39 @@ fn racing_l2(s: &mut AppState, st: &Strength) -> (u8, u8, u8) {
     }
     s.abs_phase = 0;
 
-    let brake_f = brake_curve(s.l2_raw, st, low_end);
+    let mut brake_f = brake_curve(s.l2_raw, st, low_end);
+    // Aerodynamic downforce — at speed the pedal firms up because aero load pushes
+    // the tyres harder into the tarmac, requiring higher hydraulic pressure. Only
+    // active when real telemetry is streaming (harmless fallback otherwise).
+    if s.t_on && s.t_speed > AERO_MIN_SPEED_MS {
+        let speed_factor = ((s.t_speed - AERO_MIN_SPEED_MS)
+            / (AERO_MAX_SPEED_MS - AERO_MIN_SPEED_MS)).clamp(0.0, 1.0);
+        let aero_mult = 1.0 + speed_factor * AERO_MAX_BOOST;
+        brake_f = ((brake_f as f32) * aero_mult).min(255.0) as u8;
+    }
     // Surface friction through the brake: rough surfaces (gravel, dirt, grass) add
     // a resistance tremor so the pedal feels grainy and nervous, not just heavy.
-    let brake_f = if s.t_on && s.t_surface > 0.08 {
+    brake_f = if s.t_on && s.t_surface > 0.08 {
         let texture = (s.t_surface - 0.08) / 0.92;
         let noise   = (s.engine_phase * std::f32::consts::TAU * 2.7).sin();
         (brake_f as f32 + texture * 28.0 * noise).clamp(0.0, 255.0) as u8
     } else {
         brake_f
     };
+    // Pneumatic trail collapse — during full lock-up the contact patch loses lateral
+    // support; unwind brake resistance smoothly instead of holding a rigid wall.
+    if s.t_on && s.t_slip_combined > 0.75 && s.t_slip_front > 0.75 {
+        s.l2_trail_resist = signal::pneumatic_trail_decay(
+            s.l2_trail_resist.max(brake_f as f32),
+            PNEUMATIC_DECAY,
+        );
+        let trail = s.l2_trail_resist.round().clamp(0.0, 255.0) as u8;
+        if trail < 8 {
+            return (0x05, 0, 0);
+        }
+        return (0x01, 0, trail);
+    }
+    s.l2_trail_resist = brake_f as f32;
     (0x01, 0, brake_f)
 }
 
@@ -1336,6 +1453,12 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                 let push   = (s.abs_phase % period) < (period / 2).max(1);
                 rl = rl.max(if push { 95 } else { 30 });
             }
+            // Lateral slip dominance — when cornering slip is critical, ambient engine
+            // rumble and road texture yield so the limit-handling layer reads clearly.
+            let lateral_critical = s.t_on && s.t_slip_angle > LATERAL_SLIP_CRITICAL;
+            let ambient_scale = if lateral_critical { 0.0 } else if s.t_on { AMBIENT_RPM_CLAMP } else { 1.0 };
+            let surface_scale = if lateral_critical { 0.0 } else { 1.0 };
+
             // Engine rumble (simulated RPM) — the LOW-freq (left) motor pulses at a rate
             // that climbs with throttle (engine_phase, advanced in process_frame), while
             // the overall intensity also rises with throttle. Lumpy chug near idle →
@@ -1344,7 +1467,7 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
             // "Engine rumble" knob sets that ceiling. A touch of grain on the right
             // motor keeps some high-freq detail.
             if s.edition == Edition::Full && s.engine_rpm > 0.01 {
-                let amt   = (s.engine_rpm * engine_tex as f32) as f32;
+                let amt   = (s.engine_rpm * engine_tex as f32 * ambient_scale) as f32;
                 let wave  = (s.engine_phase * std::f32::consts::TAU).sin() * 0.5 + 0.5; // 0..1
                 // Tremolo depth fades in with revs: light throttle = smooth faint rumble
                 // (no thumpy clunk on feathering), opening up restores the punchy pulse.
@@ -1468,27 +1591,41 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                 let corner_load = load(s.t_susp_fl.max(s.t_susp_fr).max(s.t_susp_rl).max(s.t_susp_rr));
 
                 // Wheelspin — rear tires slipping under power → strong high-freq grain.
+                // Pacejka-shaped intensity so micro-slips stay subtle, deep slips punch.
                 if s.t_slip_rear > 0.20 && s.r2_raw > DEAD_ZONE {
-                    let spin = ((s.t_slip_rear - 0.20) / 0.80).clamp(0.0, 1.0) * rear_load;
+                    let pacejka = signal::pacejka_haptic(s.t_slip_rear);
+                    let spin = ((s.t_slip_rear - 0.20) / 0.80).clamp(0.0, 1.0) * rear_load * pacejka;
                     rr = rr.max((spin * 240.0) as u8);
                     rl = rl.max((spin * 120.0) as u8);
                 }
                 // Lockup — front tires sliding under braking → heavy coarse judder.
                 if s.t_slip_front > 0.20 && s.l2_raw > DEAD_ZONE {
-                    let lock = ((s.t_slip_front - 0.20) / 0.80).clamp(0.0, 1.0) * front_load;
+                    let pacejka = signal::pacejka_haptic(s.t_slip_front);
+                    let lock = ((s.t_slip_front - 0.20) / 0.80).clamp(0.0, 1.0) * front_load * pacejka;
                     rl = rl.max((lock * 220.0) as u8);
                     rr = rr.max((lock * 160.0) as u8);
                 }
-                // Cornering scrub — combined slip → strong tire-howl grain.
-                if s.t_slip_combined > 0.25 {
-                    let scrub = ((s.t_slip_combined - 0.25) / 0.75).clamp(0.0, 1.0) * corner_load;
+                // Cornering scrub — combined slip + lateral angle → tire-howl grain.
+                if s.t_slip_combined > 0.25 || s.t_slip_angle > 0.08 {
+                    let scrub_slip = ((s.t_slip_combined - 0.25) / 0.75).clamp(0.0, 1.0);
+                    let scrub_ang  = ((s.t_slip_angle - 0.08) / 0.20).clamp(0.0, 1.0);
+                    let scrub = scrub_slip.max(scrub_ang) * corner_load;
                     rr = rr.max((scrub * 180.0) as u8);
                     rl = rl.max((scrub * 90.0) as u8);
                 }
-                // Road surface texture — gravel/rough tarmac, strong constant grain.
-                if s.t_surface > 0.05 {
-                    rl = rl.max((s.t_surface * 140.0) as u8);
-                    rr = rr.max((s.t_surface * 120.0) as u8);
+                // Stereophonic road surface texture — left/right voice coils from per-wheel rumble.
+                if surface_scale > 0.0 {
+                    let left_surf  = s.t_surface_fl.max(s.t_surface_rl);
+                    let right_surf = s.t_surface_fr.max(s.t_surface_rr);
+                    if left_surf > 0.05 || right_surf > 0.05 {
+                        let wave_l = (s.road_phase * std::f32::consts::TAU * 1.3).sin().abs();
+                        let wave_r = (s.road_phase * std::f32::consts::TAU * 1.7).sin().abs();
+                        rl = rl.max((left_surf * SURFACE_STEREO_SCALE * wave_l * 140.0) as u8);
+                        rr = rr.max((right_surf * SURFACE_STEREO_SCALE * wave_r * 140.0) as u8);
+                    } else if s.t_surface > 0.05 {
+                        rl = rl.max((s.t_surface * surface_scale * 140.0) as u8);
+                        rr = rr.max((s.t_surface * surface_scale * 120.0) as u8);
+                    }
                 }
                 // Kerb strike — sharp hard rattle when a wheel hits a rumble strip.
                 if s.t_kerb > 0.5 {
@@ -1512,6 +1649,20 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                     let over = ((s.t_rpm - 0.85) / 0.15).clamp(0.0, 1.0);
                     rr = rr.saturating_add((110.0 + over * 145.0) as u8); // 110 → 255
                     rl = rl.saturating_add((40.0 + over * 80.0) as u8);   // body on the low motor
+                }
+                // Rev-limiter bounce — a distinct rhythmic thump at max RPM that
+                // signals the ECU cutting spark, distinct from the progressive
+                // redline-approach flutter above. Fires off real telemetry RPM or
+                // the simulated engine, whichever is driving.
+                if (s.t_on && s.t_rpm >= REVLIM_RPM_THRESHOLD)
+                    || (!s.t_on && s.engine_rpm >= REVLIM_RPM_THRESHOLD)
+                {
+                    let pulse = (s.revlim_phase * std::f32::consts::TAU).sin();
+                    if pulse > 0.0 {
+                        let amp = (pulse * 180.0) as u8;
+                        rl = rl.max(amp);
+                        rr = rr.max((amp as u16 * 50 / 100) as u8);
+                    }
                 }
             }
         }
@@ -1672,6 +1823,12 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
         STRENGTHS[s.strength_idx]
     };
 
+    // Active drivetrain profile — selected by the user to match the vehicle.
+    // Index 0 ("Default") reproduces the original feel.  Used by the Racing
+    // slip-deadzone gate and frequency-crossover logic.
+    let dp = &DRIVETRAIN_PROFILES[s.drivetrain_profile_idx
+        .min(DRIVETRAIN_PROFILES.len() - 1)];
+
     // Advance the simulated-engine phase (Racing, Full) so the left-motor RPM rumble
     // pulses faster as the throttle opens — lumpy near idle, fast flutter at redline.
     // engine_rpm chases the throttle with inertia (so light feathering doesn't make
@@ -1738,12 +1895,20 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
         if s.engine_rpm < 0.01 {
             s.engine_rpm = 0.0;
             s.engine_phase = 0.0;
+            s.revlim_phase = 0.0;
         } else {
             // Pulse rate climbs idle_hz → red_hz with revs (live "idle chug" / redline).
             let idle = s.drivetrain.idle_hz as f32;
             let red  = (s.drivetrain.red_hz as f32).max(idle + 1.0);
             let freq = idle + s.engine_rpm * (red - idle);
             s.engine_phase = (s.engine_phase + freq / 60.0).fract();
+            // Rev-limiter bounce phase advances at fixed cadence only when revs are
+            // at the ceiling so it drives a rhythmic pulse even if the engine rpm
+            // itself is saturated.
+            if s.engine_rpm >= REVLIM_RPM_THRESHOLD || (s.t_on && s.t_rpm >= REVLIM_RPM_THRESHOLD)
+            {
+                s.revlim_phase = (s.revlim_phase + REVLIM_BOUNCE_HZ / 60.0).fract();
+            }
         }
         // Free-running road/friction phase: a grind rate that climbs with how hard the
         // tires are working (max slip) and how rough the surface is, so the friction
@@ -1754,6 +1919,17 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                 .max(s.t_surface * 1.5);
             let grind_hz = 16.0 + work.clamp(0.0, 2.0) * 14.0; // 16 → ~44 Hz
             s.road_phase = (s.road_phase + grind_hz / 60.0).fract();
+            // Slip-duration counters — ignore transient micro-slips (< ~25 ms).
+            if s.t_slip_rear > 0.20 {
+                s.t_slip_rear_frames = s.t_slip_rear_frames.saturating_add(1);
+            } else {
+                s.t_slip_rear_frames = 0;
+            }
+            if s.t_slip_front > 0.20 {
+                s.t_slip_front_frames = s.t_slip_front_frames.saturating_add(1);
+            } else {
+                s.t_slip_front_frames = 0;
+            }
         } else {
             s.road_phase = 0.0;
         }
@@ -1851,6 +2027,8 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     }
                     f.clamp(0.0, 255.0) as u8
                 } else { lp1 };
+                let lp1 = signal::slew_rate_limit(s.l2_resist_slew, lp1, SLEW_MAX_CHANGE);
+                s.l2_resist_slew = lp1;
                 s.l2_force = lp1;
                 // Downshift thunk through the brake (active drive, mode 0x06) — a heavy
                 // mechanical clunk felt even while trail-braking or coasting. Only on
@@ -1962,13 +2140,18 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     && s.edition == Edition::Full
                     && s.t_on
                     && s.t_slip_rear > 0.20
+                    && s.t_slip_rear_frames >= dp.slip_deadzone_frames
                 {
-                    // Telemetry wheelspin pedal: when the rears are spinning under power,
-                    // switch the throttle from resistance to active-drive flutter so the
-                    // pedal pushes back — a cue to ease off. Freq/amp scale with slip.
+                    // Telemetry wheelspin pedal: Pacejka-shaped amp + frequency crossover
+                    // to deep judder when slip ratio exceeds 1.0 (hybrid / AWD spin).
+                    // Normal slip: light informative flutter (50-80 Hz). Deep slip:
+                    // heavy low-freq thud (35 Hz) that the trigger motor can track
+                    // smoothly instead of chattering from eTC square-wave spikes.
                     let slip = ((s.t_slip_rear - 0.20) / 0.80).clamp(0.0, 1.0);
-                    let freq = (8.0 + slip * 20.0) as u8;  // slow judder → fast chatter
-                    let amp  = (120.0 + slip * 135.0).min(255.0) as u8;
+                    let pacejka = signal::pacejka_haptic(s.t_slip_rear);
+                    let base_hz = dp.slip_flutter_lo_hz + slip * (dp.slip_flutter_hi_hz - dp.slip_flutter_lo_hz);
+                    let freq = signal::slip_crossover_freq(s.t_slip_rear, base_hz, dp.slip_crossover_deep_hz) as u8;
+                    let amp  = ((120.0 + slip * 135.0) * pacejka).min(255.0) as u8;
                     (0x06u8, freq, amp)
                 } else if s.edition == Edition::Full
                     && s.t_on
@@ -2980,6 +3163,9 @@ fn hid_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
         let mut last_frame = Instant::now();
         let mut last_emit  = Instant::now();
         let mut last_diag  = Instant::now();
+        // Haptic report delta cache — only write to the device when the frame
+        // output actually changes, saving USB/BT bandwidth and controller cycles.
+        let mut last_report: Option<[u8; 48]> = None;
         // Change-detection diagnostics: print only when input moves.
         let (mut diag_l2, mut diag_r2) = (0u8, 0u8);
         eprintln!("[diag] hid_loop started, haptic output open ({:?})", transport);
@@ -3055,7 +3241,20 @@ fn hid_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
                     }
                 };
 
-                if write_report(&device, transport, &report).is_err() { break; }
+                // Delta-check: skip the write when the haptic report hasn't
+                // changed since last frame (idle triggers / steady cruise).
+                // First frame (None) always transmits so the device receives
+                // an initial report.  Profile-switch / strength / Minecraft
+                // lightbar writes above are independent and not affected.
+                // Only applied over USB — Bluetooth needs every write to
+                // advance the rolling sequence counter in the output report
+                // header so the stack keeps the connection alive.
+                let skip = transport == Transport::Usb
+                    && last_report.map_or(false, |prev| prev == report);
+                if !skip {
+                    if write_report(&device, transport, &report).is_err() { break; }
+                    last_report = Some(report);
+                }
             }
 
             // ── Emit state snapshot to frontend at ~30 fps ───────────────────

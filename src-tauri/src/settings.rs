@@ -18,6 +18,8 @@ pub struct SavedSettings {
     #[serde(default)]
     pub throttle_light_on: bool,
     #[serde(default)]
+    pub drivetrain_profile: Option<usize>,
+    #[serde(default)]
     pub motion:      Option<MotionSettings>,
     #[serde(default)]
     pub passthrough: Option<PassthroughSettings>,

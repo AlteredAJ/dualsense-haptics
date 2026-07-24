@@ -14,6 +14,9 @@
 // whose offset shifted between titles, so we locate it by packet length.
 
 use crate::hid::AppState;
+use crate::signal::{
+    self, EWMA_ALPHA, HEAVE_LPF_HZ, SUSP_LPF_HZ, TELEM_SAMPLE_HZ, TC_HAPTIC_SCALE,
+};
 use std::io::Write;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
@@ -167,11 +170,6 @@ fn apply_packet(s: &mut AppState, b: &[u8], len: usize, race_on: bool) {
     let slip_rr = f32_at(b, 96).abs();
     s.t_slip_front = slip_fl.max(slip_fr);          // lockup / understeer scrub
     s.t_slip_rear  = slip_rl.max(slip_rr);          // wheelspin (drive wheels on RWD)
-    let comb = f32_at(b, 180).abs()
-        .max(f32_at(b, 184).abs())
-        .max(f32_at(b, 188).abs())
-        .max(f32_at(b, 192).abs());
-    s.t_slip_combined = comb;                        // overall grip loss / cornering scrub
 
     // Surface rumble (road texture / gravel) and kerb contact, max across wheels.
     let surf = f32_at(b, 148).max(f32_at(b, 152)).max(f32_at(b, 156)).max(f32_at(b, 160));
@@ -179,20 +177,63 @@ fn apply_packet(s: &mut AppState, b: &[u8], len: usize, race_on: bool) {
     let kerb = f32_at(b, 116).max(f32_at(b, 120)).max(f32_at(b, 124)).max(f32_at(b, 128));
     s.t_kerb = kerb;
 
-    // Per-wheel normalized suspension travel (FL,FR,RL,RR) → directional bump feel.
-    // A bump is a rapid CHANGE in travel (the wheel jouncing over something), so we take
-    // the per-wheel delta vs the previous packet and fold it into a per-SIDE intensity:
-    // left = max(FL,RL), right = max(FR,RR). Smooth tarmac = tiny deltas; bumps, crests,
-    // kerbs and dips = spikes. Clamp the delta so a one-off jump (e.g. on telemetry
-    // start) can't fire a giant jolt.
-    let sfl = f32_at(b, 68);
-    let sfr = f32_at(b, 72);
-    let srl = f32_at(b, 76);
-    let srr = f32_at(b, 80);
+    // Vertical heave (AccelerationY in the car frame) — low-pass filtered for load gating.
+    let heave_raw = f32_at(b, 24);
+    s.t_filt_heave = signal::low_pass(
+        heave_raw,
+        s.t_filt_heave,
+        HEAVE_LPF_HZ,
+        TELEM_SAMPLE_HZ,
+    );
+    s.t_heave = s.t_filt_heave;
+    s.t_grip_mult = signal::grip_multiplier(s.t_heave);
+
+    // Per-wheel normalized suspension travel — low-pass filtered before bump/droop logic
+    // so sharp telemetry spikes (bottoming, crest compression) don't clack the actuators.
+    let sfl_raw = f32_at(b, 68);
+    let sfr_raw = f32_at(b, 72);
+    let srl_raw = f32_at(b, 76);
+    let srr_raw = f32_at(b, 80);
+    let sfl = signal::low_pass(sfl_raw, s.t_filt_susp_fl, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
+    let sfr = signal::low_pass(sfr_raw, s.t_filt_susp_fr, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
+    let srl = signal::low_pass(srl_raw, s.t_filt_susp_rl, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
+    let srr = signal::low_pass(srr_raw, s.t_filt_susp_rr, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
+    s.t_filt_susp_fl = sfl;
+    s.t_filt_susp_fr = sfr;
+    s.t_filt_susp_rl = srl;
+    s.t_filt_susp_rr = srr;
+
+    // Per-wheel delta vs previous filtered travel → directional bump feel.
     let d = |now: f32, prev: f32| (now - prev).abs().min(0.30);
     s.t_bump_left  = d(sfl, s.t_susp_fl).max(d(srl, s.t_susp_rl));
     s.t_bump_right = d(sfr, s.t_susp_fr).max(d(srr, s.t_susp_rr));
-    s.t_susp_fl = sfl; s.t_susp_fr = sfr; s.t_susp_rl = srl; s.t_susp_rr = srr;
+    s.t_susp_fl = sfl;
+    s.t_susp_fr = sfr;
+    s.t_susp_rl = srl;
+    s.t_susp_rr = srr;
+
+    // Tire slip angle (FL,FR,RL,RR) — EWMA smoothed for continuous cornering feel.
+    let ang_fl = f32_at(b, 132).abs();
+    let ang_fr = f32_at(b, 136).abs();
+    let ang_rl = f32_at(b, 140).abs();
+    let ang_rr = f32_at(b, 144).abs();
+    let ang_max = ang_fl.max(ang_fr).max(ang_rl).max(ang_rr);
+    s.t_ewma_slip_angle = signal::ewma(ang_max, s.t_ewma_slip_angle, EWMA_ALPHA);
+    s.t_slip_angle = s.t_ewma_slip_angle;
+
+    // Combined slip — EWMA on the per-wheel max before it feeds haptics.
+    let comb_raw = f32_at(b, 180).abs()
+        .max(f32_at(b, 184).abs())
+        .max(f32_at(b, 188).abs())
+        .max(f32_at(b, 192).abs());
+    s.t_ewma_combined = signal::ewma(comb_raw, s.t_ewma_combined, EWMA_ALPHA);
+    s.t_slip_combined = s.t_ewma_combined;
+
+    // Per-wheel surface rumble for stereophonic road texture (left/right voice coils).
+    s.t_surface_fl = f32_at(b, 148).clamp(0.0, 1.0);
+    s.t_surface_fr = f32_at(b, 152).clamp(0.0, 1.0);
+    s.t_surface_rl = f32_at(b, 156).clamp(0.0, 1.0);
+    s.t_surface_rr = f32_at(b, 160).clamp(0.0, 1.0);
 
     // Speed (Dash block, m/s). The whole Dash block shifts +12 bytes on Horizon titles
     // (CarGroup/Smashable* are inserted right after the Sled), so Speed sits at 256 on
@@ -229,5 +270,34 @@ fn apply_packet(s: &mut AppState, b: &[u8], len: usize, race_on: bool) {
     if len >= 317 {
         s.t_accel_input = b[315];
         s.t_brake_input = b[316];
+    }
+
+    // Traction-control proxy: high rear slip + throttle but low longitudinal G means
+    // the ECU is cutting power (common on hybrids / TC-equipped cars).
+    s.t_tc_active = s.t_slip_rear > 0.35
+        && s.t_accel_input > 180
+        && s.t_accel < 2.0;
+
+    // Apply grip multiplier + TC attenuation to slip-driven telemetry scalars.
+    let haptic_scale = s.t_grip_mult * if s.t_tc_active { TC_HAPTIC_SCALE } else { 1.0 };
+    s.t_slip_front *= haptic_scale;
+    s.t_slip_rear *= haptic_scale;
+    s.t_slip_combined *= haptic_scale;
+    s.t_slip_angle *= haptic_scale;
+    s.t_surface *= haptic_scale;
+    s.t_surface_fl *= haptic_scale;
+    s.t_surface_fr *= haptic_scale;
+    s.t_surface_rl *= haptic_scale;
+    s.t_surface_rr *= haptic_scale;
+    s.t_bump_left *= haptic_scale;
+    s.t_bump_right *= haptic_scale;
+
+    // Suspension droop gate — zero slip/surface feel when all wheels are unloaded.
+    let min_susp = s.t_susp_fl.min(s.t_susp_fr).min(s.t_susp_rl).min(s.t_susp_rr);
+    if min_susp < 0.05 {
+        s.t_slip_front = 0.0;
+        s.t_slip_rear = 0.0;
+        s.t_slip_combined = 0.0;
+        s.t_slip_angle = 0.0;
     }
 }

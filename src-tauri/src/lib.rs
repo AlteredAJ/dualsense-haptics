@@ -1,6 +1,7 @@
 mod feels;
 mod forza;
 mod hid;
+mod signal;
 mod license;
 mod mc;
 mod settings;
@@ -86,6 +87,7 @@ fn persist(s: &AppState) {
         }),
         tire_scrub_on:     s.tire_scrub_on,
         throttle_light_on: s.throttle_light_on,
+        drivetrain_profile: Some(s.drivetrain_profile_idx),
         motion: Some(settings::MotionSettings {
             steer_enabled:  s.motion.steer_enabled,
             steer_sens:     s.motion.steer_sens,
@@ -490,6 +492,15 @@ fn set_drivetrain(state: State<SharedState>, cfg: DrivetrainCfg) {
     persist(&s);
 }
 
+#[tauri::command]
+fn set_drivetrain_profile(state: State<SharedState>, idx: usize) -> usize {
+    let mut s = state.lock().unwrap();
+    let resolved = if idx < hid::DRIVETRAIN_PROFILES.len() { idx } else { 0 };
+    s.drivetrain_profile_idx = resolved;
+    persist(&s);
+    resolved
+}
+
 /// Haptic EQ for the Audio profile's true-haptics stream: per-band gains and the
 /// expander gate. Applied live by the capture thread (shared AudioTune).
 #[derive(Deserialize)]
@@ -636,6 +647,11 @@ pub fn run() {
         s.racing_custom_on = saved.racing_custom_on;
         s.tire_scrub_on     = saved.tire_scrub_on;
         s.throttle_light_on = saved.throttle_light_on;
+        if let Some(idx) = saved.drivetrain_profile {
+            if idx < hid::DRIVETRAIN_PROFILES.len() {
+                s.drivetrain_profile_idx = idx;
+            }
+        }
         if let Some(m) = saved.motion {
             s.motion.steer_enabled  = m.steer_enabled;
             s.motion.steer_sens     = m.steer_sens;
@@ -700,6 +716,7 @@ pub fn run() {
             set_motion_aim,
             set_rumble_passthrough,
             set_drivetrain,
+            set_drivetrain_profile,
             set_audio_tune,
         ])
         .setup(move |app| {
