@@ -1016,7 +1016,7 @@ impl AppState {
             profile:        self.profile.as_str().to_string(),
             output_mode:    self.output_mode.as_str().to_string(),
             strength_idx:   self.strength_idx,
-            strength_label: STRENGTHS[self.strength_idx].label.to_string(),
+            strength_label: STRENGTHS.get(self.strength_idx).unwrap_or(&STRENGTHS[0]).label.to_string(),
             gun_weapon:     WEAPONS[self.gun_weapon].key.to_string(),
             melee_weapon:   MELEE_WEAPONS[self.melee_weapon].key.to_string(),
             mc_preview:     self.mc_preview,
@@ -3148,7 +3148,7 @@ fn hid_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
                 s.error_msg = String::new();
                 let lb = s.profile.lightbar();
                 let _ = write_report(&device, transport, &lightbar_report(lb[0], lb[1], lb[2]));
-                let _ = write_report(&device, transport, &player_led_report(PLAYER_LED[s.strength_idx]));
+                let _ = write_report(&device, transport, &player_led_report(PLAYER_LED[s.strength_idx.min(PLAYER_LED.len() - 1)]));
             }
         }
 
@@ -3227,7 +3227,7 @@ fn hid_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
                             last_mc_item = s.mc_item;
                         }
                         if s.strength_idx != last_strength {
-                            let _ = write_report(&device, transport, &player_led_report(PLAYER_LED[s.strength_idx]));
+                            let _ = write_report(&device, transport, &player_led_report(PLAYER_LED[s.strength_idx.min(PLAYER_LED.len() - 1)]));
                             last_strength = s.strength_idx;
                         }
                         if s.profile == Profile::Audio {
