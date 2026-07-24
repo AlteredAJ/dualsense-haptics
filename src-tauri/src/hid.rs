@@ -714,6 +714,7 @@ pub struct AppState {
     pub t_connected:     bool,  // packets physically arriving (real connection proof,
                                 // true even while paused/in menus — distinct from t_on)
     pub t_last_rx:       Option<Instant>, // timestamp of last valid packet (watchdog)
+    pub t_f123_max_rpm:   f32,           // dynamic max RPM seen for F1 23 normalization
     pub t_rpm:           f32,   // real engine revs, normalized idle→redline (0..1)
     pub t_accel:         f32,   // longitudinal acceleration (m/s²; + accel, − brake)
     pub t_slip_front:    f32,   // front tire slip ratio (lockup / understeer)
@@ -886,7 +887,7 @@ impl Default for AppState {
             eng_prev_throttle: 0.0,
             eng_lash_frames: 0,
             burble_frames: 0,
-            t_on: false, t_connected: false, t_last_rx: None, t_rpm: 0.0, t_accel: 0.0,
+            t_on: false, t_connected: false, t_last_rx: None, t_f123_max_rpm: 13000.0, t_rpm: 0.0, t_accel: 0.0,
             t_slip_front: 0.0, t_slip_rear: 0.0, t_slip_combined: 0.0,
             t_surface: 0.0, t_kerb: 0.0, t_speed: 0.0, t_gear: 0, t_prev_gear: 0,
             t_accel_input: 0, t_brake_input: 0,
@@ -1377,7 +1378,7 @@ fn racing_l2(s: &mut AppState, st: &Strength) -> (u8, u8, u8) {
     // Aerodynamic downforce — at speed the pedal firms up because aero load pushes
     // the tyres harder into the tarmac, requiring higher hydraulic pressure. Only
     // active when real telemetry is streaming (harmless fallback otherwise).
-    if s.t_on && s.t_speed > AERO_MIN_SPEED_MS {
+    if s.edition == Edition::Full && s.t_on && s.t_speed > AERO_MIN_SPEED_MS {
         let speed_factor = ((s.t_speed - AERO_MIN_SPEED_MS)
             / (AERO_MAX_SPEED_MS - AERO_MIN_SPEED_MS)).clamp(0.0, 1.0);
         let aero_mult = 1.0 + speed_factor * AERO_MAX_BOOST;
@@ -1712,8 +1713,10 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                 // signals the ECU cutting spark, distinct from the progressive
                 // redline-approach flutter above. Fires off real telemetry RPM or
                 // the simulated engine, whichever is driving.
-                if (s.t_on && s.t_rpm >= REVLIM_RPM_THRESHOLD)
-                    || (!s.t_on && s.engine_rpm >= REVLIM_RPM_THRESHOLD)
+                // Full edition only — Free tier just gets the redline flutter.
+                if s.edition == Edition::Full
+                    && ((s.t_on && s.t_rpm >= REVLIM_RPM_THRESHOLD)
+                        || (!s.t_on && s.engine_rpm >= REVLIM_RPM_THRESHOLD))
                 {
                     let pulse = (s.revlim_phase * std::f32::consts::TAU).sin();
                     if pulse > 0.0 {

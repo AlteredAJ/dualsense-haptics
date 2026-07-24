@@ -968,6 +968,9 @@ select.lab-select, select.racing-select {
 }
 select.lab-select:hover, select.racing-select:hover { border-color: var(--accent); }
 select.lab-select:focus, select.racing-select:focus { outline: none; border-color: var(--accent); }
+select.lab-select option, select.racing-select option {
+  background: #1a1d24; color: #e0e0e0;
+}
 
 /* ── Light theme: keep the material frosted, just invert the ground ──────── */
 #app[data-theme="light"] #trigger-section,

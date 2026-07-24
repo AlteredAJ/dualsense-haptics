@@ -163,10 +163,13 @@ fn apply_packet(s: &mut AppState, car: &[u8], mot: &[u8]) {
         let g = car[car_offset + 15] as i8;
         s.t_gear = if g > 0 { g as u8 } else { 0 };
     }
-    // Engine RPM: uint16 → normalize to 0..1 (F1 redline ~15k RPM)
+    // Engine RPM: uint16 — track dynamic max for accurate normalization
     if car.len() >= car_offset + 18 {
         let rpm = u16_at(car, car_offset + 16) as f32;
-        s.t_rpm = (rpm / 15000.0).clamp(0.0, 1.0);
+        if rpm > s.t_f123_max_rpm * 0.9 {
+            s.t_f123_max_rpm = s.t_f123_max_rpm.max(rpm).min(18000.0);
+        }
+        s.t_rpm = (rpm / s.t_f123_max_rpm).clamp(0.0, 1.0);
     }
     // Surface type: uint8[4] — map enum 0-11 to 0..1
     if car.len() >= car_offset + 60 {
