@@ -88,6 +88,7 @@ fn persist(s: &AppState) {
         tire_scrub_on:     s.tire_scrub_on,
         throttle_light_on: s.throttle_light_on,
         drivetrain_profile: Some(s.drivetrain_profile_idx),
+        drivetrain_auto: s.drivetrain_auto,
         motion: Some(settings::MotionSettings {
             steer_enabled:  s.motion.steer_enabled,
             steer_sens:     s.motion.steer_sens,
@@ -501,6 +502,18 @@ fn set_drivetrain_profile(state: State<SharedState>, idx: usize) -> usize {
     resolved
 }
 
+#[tauri::command]
+fn set_drivetrain_auto(state: State<SharedState>, enabled: bool) -> bool {
+    let mut s = state.lock().unwrap();
+    s.drivetrain_auto = enabled;
+    if !enabled {
+        s.slip_history_rear.clear();
+        s.slip_history_front.clear();
+    }
+    persist(&s);
+    s.drivetrain_auto
+}
+
 /// Haptic EQ for the Audio profile's true-haptics stream: per-band gains and the
 /// expander gate. Applied live by the capture thread (shared AudioTune).
 #[derive(Deserialize)]
@@ -652,6 +665,7 @@ pub fn run() {
                 s.drivetrain_profile_idx = idx;
             }
         }
+        s.drivetrain_auto = saved.drivetrain_auto;
         if let Some(m) = saved.motion {
             s.motion.steer_enabled  = m.steer_enabled;
             s.motion.steer_sens     = m.steer_sens;
@@ -717,6 +731,7 @@ pub fn run() {
             set_rumble_passthrough,
             set_drivetrain,
             set_drivetrain_profile,
+            set_drivetrain_auto,
             set_audio_tune,
         ])
         .setup(move |app| {

@@ -3,6 +3,7 @@ use crate::signal::{
     self, AMBIENT_RPM_CLAMP, LATERAL_SLIP_CRITICAL, PNEUMATIC_DECAY,
     SLEW_MAX_CHANGE, SURFACE_STEREO_SCALE,
 };
+use std::collections::VecDeque;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -495,6 +496,12 @@ pub const DRIVETRAIN_PROFILES: [DrivetrainProfile; 5] = [
     },
 ];
 
+/// Sliding-window auto-detection: classifies drivetrain type from Forza telemetry
+/// so the user doesn't need to pick a profile manually.
+const AUTO_DETECT_WINDOW: usize = 15; // frames (~250ms at 60Hz)
+const AUTO_DETECT_VAR_THRESHOLD: f32 = 0.15; // derivative variance threshold for hybrid
+const AUTO_DETECT_DELTA_HYBRID: f32 = 0.3; // front-rear slip delta threshold for RWD bias
+
 /// Motion (gyro + accelerometer) configuration for tilt-steering and gyro aim.
 /// All angles in degrees, rates in degrees/second. Tunable live from the Motion panel.
 #[derive(Clone)]
@@ -568,6 +575,9 @@ pub struct AppState {
     pub motion: MotionCfg,
     pub drivetrain: DrivetrainFeel,          // Racing engine/throttle feel character
     pub drivetrain_profile_idx: usize,       // index into DRIVETRAIN_PROFILES
+    pub drivetrain_auto: bool,               // true = auto-detect, false = manual
+    pub slip_history_rear: VecDeque<f32>,    // rear slip window for auto-detection
+    pub slip_history_front: VecDeque<f32>,   // front slip window for auto-detection
     pub aim_toggle_on: bool,                 // latched state for aim_mode == toggle
     // ── Game rumble passthrough (Xbox output) ─────────────────────────────────
     // Raw motor values the game last sent to the virtual pad (written by the
@@ -797,6 +807,9 @@ impl Default for AppState {
             motion: MotionCfg::default(),
             drivetrain: DrivetrainFeel::default(),
             drivetrain_profile_idx: 0,
+            drivetrain_auto: false,
+            slip_history_rear: VecDeque::new(),
+            slip_history_front: VecDeque::new(),
             aim_toggle_on: false,
             game_rumble_l: 0, game_rumble_r: 0,
             pt_enabled: true, pt_intensity: 1.0,
@@ -900,6 +913,8 @@ impl AppState {
         self.engine_phase          = 0.0;
         self.road_phase            = 0.0;
         self.revlim_phase          = 0.0;
+        self.slip_history_rear.clear();
+        self.slip_history_front.clear();
         self.engine_rpm            = 0.0;
         self.shift_rpm             = 0.0;
         self.mc_attack_frames      = 0;
@@ -1810,6 +1825,67 @@ fn test_report(s: &AppState) -> [u8; 48] {
 
 // ─── Frame processor ──────────────────────────────────────────────────────────
 
+/// Drivetrain auto-detection from Forza telemetry.  Pushes current slip values
+/// into per-axle ring buffers; when the window is full, computes the variance of
+/// the rear-slip discrete derivative (detects eTC square-wave oscillation) and
+/// the mean front-to-rear slip delta (detects torque bias).  Sets
+/// `drivetrain_profile_idx` if confidence is high, otherwise leaves the current
+/// selection unchanged.
+fn auto_detect_drivetrain(s: &mut AppState) {
+    if !s.t_on || !s.drivetrain_auto {
+        return;
+    }
+    // Fill sliding windows
+    s.slip_history_rear.push_back(s.t_slip_rear);
+    s.slip_history_front.push_back(s.t_slip_front);
+    while s.slip_history_rear.len() > AUTO_DETECT_WINDOW {
+        s.slip_history_rear.pop_front();
+    }
+    while s.slip_history_front.len() > AUTO_DETECT_WINDOW {
+        s.slip_history_front.pop_front();
+    }
+    if s.slip_history_rear.len() < AUTO_DETECT_WINDOW
+        || s.slip_history_front.len() < AUTO_DETECT_WINDOW
+    {
+        return; // not enough data yet
+    }
+
+    // Feature 1 — variance of the discrete derivative of rear slip.
+    // Hybrid eTC produces violent oscillation (square wave) → high variance.
+    let rear: Vec<f32> = s.slip_history_rear.iter().copied().collect();
+    let mut deriv = 0.0f32;
+    let mut deriv_sq = 0.0f32;
+    let n = (AUTO_DETECT_WINDOW - 1) as f32;
+    for i in 1..AUTO_DETECT_WINDOW {
+        let d = rear[i] - rear[i - 1];
+        deriv += d;
+        deriv_sq += d * d;
+    }
+    let mean_deriv = deriv / n;
+    let var_deriv = (deriv_sq / n) - (mean_deriv * mean_deriv);
+    let var_deriv = if var_deriv > 0.0 { var_deriv } else { 0.0 };
+
+    // Feature 2 — mean front-to-rear slip delta.
+    let mean_rear: f32 = rear.iter().sum::<f32>() / AUTO_DETECT_WINDOW as f32;
+    let front: Vec<f32> = s.slip_history_front.iter().copied().collect();
+    let mean_front: f32 = front.iter().sum::<f32>() / AUTO_DETECT_WINDOW as f32;
+    let delta = mean_rear - mean_front;
+
+    // Classification
+    let idx = if var_deriv > AUTO_DETECT_VAR_THRESHOLD && delta > AUTO_DETECT_DELTA_HYBRID {
+        2 // Hybrid Electric
+    } else if var_deriv <= AUTO_DETECT_VAR_THRESHOLD && delta.abs() < 0.10 {
+        1 // Mechanical AWD
+    } else if delta > 0.50 {
+        3 // RWD
+    } else if delta < -0.30 {
+        4 // FWD
+    } else {
+        0 // Default
+    };
+    s.drivetrain_profile_idx = idx;
+}
+
 fn process_frame(s: &mut AppState) -> [u8; 48] {
     // Trigger Lab override — bypass all profile logic, emit the raw test effect.
     if s.test_active {
@@ -1854,6 +1930,9 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
 
         if s.t_on {
             // ── Real Forza telemetry drives the engine ────────────────────────────
+            // Run auto-detection first so the dp binding (taken next frame) reflects
+            // the classified drivetrain.
+            auto_detect_drivetrain(s);
             // Real revs → the pulse pitch and rev-matching are genuine, not inferred.
             s.engine_rpm = s.t_rpm;
             // Real longitudinal G is the true driveline load: forward accel pulls to the
