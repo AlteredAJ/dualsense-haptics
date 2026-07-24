@@ -981,6 +981,8 @@ pub struct StateSnapshot {
     pub dt_red_hz:  u8,
     pub dt_weight:  u8,
     pub dt_load:    u8,
+    pub dt_profile: usize,   // drivetrain profile index
+    pub dt_auto:    bool,    // auto-detect enabled
     pub eng_rpm:    f32, // live engine revs 0..1 (tach)
     pub eng_load:   f32, // live driveline load 0..1 (tach)
     pub telem_on:        bool, // live race data (packets + IsRaceOn)
@@ -1072,6 +1074,8 @@ impl AppState {
             dt_red_hz:  self.drivetrain.red_hz,
             dt_weight:  self.drivetrain.weight,
             dt_load:    self.drivetrain.load,
+            dt_profile: self.drivetrain_profile_idx,
+            dt_auto:    self.drivetrain_auto,
             eng_rpm:    self.engine_rpm,
             eng_load:   self.eng_load,
             telem_on:        self.t_on,

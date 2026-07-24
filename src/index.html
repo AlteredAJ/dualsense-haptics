@@ -501,6 +501,24 @@
         </div>
       </div>
 
+      <div class="lab-section-label rc-span">Drivetrain profile</div>
+
+      <div class="rc-knob rc-span">
+        <select id="rc-dt-profile" class="lab-select">
+          <option value="0">Default</option>
+          <option value="1">Mechanical AWD</option>
+          <option value="2">Hybrid Electric</option>
+          <option value="3">RWD</option>
+          <option value="4">FWD</option>
+        </select>
+        <span class="rc-knob-desc">Matches DSP deadzone, flutter, and crossover parameters to the vehicle's drivetrain archetype.</span>
+      </div>
+
+      <div class="rc-knob rc-span">
+        <button id="rc-dt-auto" class="toggle-pill">Auto-detect</button>
+        <span class="rc-knob-desc">Classifies the drivetrain from Forza telemetry (slip variance and torque bias). Overrides manual selection while active.</span>
+      </div>
+
       <div class="lab-section-label rc-span">ABS &amp; gear</div>
 
       <div class="rc-knob">

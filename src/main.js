@@ -801,6 +801,7 @@ listen('state-update', e => render(e.payload));
   initPtFromState(s);
   initEqFromState(s);
   initDrivetrainFromState(s);
+  initDtProfileFromState(s);
   render(s);
 })();
 
@@ -1573,6 +1574,29 @@ function updateTach(s) {
   dtTachRpm.style.width  = `${Math.round((s.eng_rpm || 0) * 100)}%`;
   dtTachLoad.style.width = `${Math.round(Math.min(1, (s.eng_load || 0)) * 100)}%`;
 }
+
+// ── Drivetrain profile ─────────────────────────────────────────────────────
+const dtProfile  = document.getElementById('rc-dt-profile');
+const dtAutoBtn  = document.getElementById('rc-dt-auto');
+let   dtAutoState = false;
+
+function initDtProfileFromState(s) {
+  if (dtProfile && s.dt_profile !== undefined) {
+    dtProfile.value = s.dt_profile;
+  }
+  dtAutoState = !!s.dt_auto;
+  if (dtAutoBtn) dtAutoBtn.classList.toggle('on', dtAutoState);
+}
+
+dtProfile?.addEventListener('change', () => {
+  invoke('set_drivetrain_profile', { idx: +dtProfile.value }).catch(() => {});
+});
+
+dtAutoBtn?.addEventListener('click', () => {
+  dtAutoState = !dtAutoState;
+  dtAutoBtn.classList.toggle('on', dtAutoState);
+  invoke('set_drivetrain_auto', { enabled: dtAutoState }).catch(() => {});
+});
 
 rcPreviewBtn.addEventListener('click', () => {
   rcState.preview = !rcState.preview;
