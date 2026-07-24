@@ -789,6 +789,9 @@ function render(s) {
 
   // Live tach in the Racing Lab (only when the Lab is open on the racing tab)
   if (!labPanel.classList.contains('hidden') && labActiveTab === 'racing') updateTach(s);
+
+  // Racing main-page controls (telemetry, drivetrain, assists)
+  updateRacingMainUI(s);
 }
 
 // ─── State updates ────────────────────────────────────────────────────────────
@@ -1697,4 +1700,61 @@ async function rcEnter() {
     ? 'Custom curve is active as your Racing profile.'
     : 'Using strength presets. Tune + Save to personalize.';
   initDrivetrainFromState(s);
+}
+
+// ── Racing main-page controls (telemetry, drivetrain, assists) ────────────
+const racingControls = document.getElementById('racing-controls');
+const racingGameSrc  = document.getElementById('racing-game-source');
+const racingDtProf   = document.getElementById('racing-dt-profile');
+const racingDtAuto   = document.getElementById('racing-dt-auto');
+const racingStab     = document.getElementById('racing-assist-stability');
+const racingDrift    = document.getElementById('racing-assist-drift');
+
+racingGameSrc?.addEventListener('change', () => {
+  invoke('set_game_source', { source: racingGameSrc.value }).catch(() => {});
+  // Also update the Lab dropdown to stay in sync
+  const labGs = document.getElementById('rc-game-source');
+  if (labGs) labGs.value = racingGameSrc.value;
+});
+racingDtProf?.addEventListener('change', () => {
+  invoke('set_drivetrain_profile', { idx: +racingDtProf.value }).catch(() => {});
+  const labDp = document.getElementById('rc-dt-profile');
+  if (labDp) labDp.value = racingDtProf.value;
+});
+racingDtAuto?.addEventListener('click', () => {
+  const on = !racingDtAuto.classList.contains('on');
+  racingDtAuto.classList.toggle('on', on);
+  invoke('set_drivetrain_auto', { enabled: on }).catch(() => {});
+  const labAuto = document.getElementById('rc-dt-auto');
+  if (labAuto) labAuto.classList.toggle('on', on);
+});
+racingStab?.addEventListener('click', () => {
+  const on = !racingStab.classList.contains('on');
+  racingStab.classList.toggle('on', on);
+  invoke('set_racing_assist', { stability: on, drift: racingDrift?.classList.contains('on') ?? false }).catch(() => {});
+});
+racingDrift?.addEventListener('click', () => {
+  const on = !racingDrift.classList.contains('on');
+  racingDrift.classList.toggle('on', on);
+  invoke('set_racing_assist', { stability: racingStab?.classList.contains('on') ?? false, drift: on }).catch(() => {});
+});
+
+// Sync main-page Racing controls from state (called from render)
+function updateRacingMainUI(s) {
+  if (!racingControls) return;
+  const isRacing = s.profile === 'racing';
+  racingControls.classList.toggle('hidden', !isRacing);
+  if (!isRacing) return;
+
+  if (racingDtProf && s.dt_profile !== undefined) racingDtProf.value = s.dt_profile;
+  if (racingDtAuto) racingDtAuto.classList.toggle('on', !!s.dt_auto);
+
+  // Telemetry status
+  const telemRow = document.getElementById('racing-telem-row');
+  const telemStat = document.getElementById('telem-status-main');
+  if (telemRow && telemStat) {
+    telemRow.style.display = s.telem_connected ? '' : 'none';
+    telemStat.textContent = s.telem_on ? '⬤ Telemetry live' : '⬤ Telemetry paused';
+    telemStat.className = s.telem_on ? 'telem-on' : 'telem-off';
+  }
 }

@@ -33,7 +33,8 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "wix": null
+      "wix": null,
+      "webviewInstallMode": { "type": "embedBootstrapper" }
     }
   }
 }

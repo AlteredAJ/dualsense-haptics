@@ -609,6 +609,8 @@ pub struct AppState {
     pub drivetrain: DrivetrainFeel,          // Racing engine/throttle feel character
     pub drivetrain_profile_idx: usize,       // index into DRIVETRAIN_PROFILES
     pub drivetrain_auto: bool,               // true = auto-detect, false = manual
+    pub racing_assist_stability: bool,      // throttle firms near traction limit
+    pub racing_assist_drift: bool,          // throttle lightens in drift sweet spot
     pub slip_history_rear: VecDeque<f32>,    // rear slip window for auto-detection
     pub slip_history_front: VecDeque<f32>,   // front slip window for auto-detection
     pub aim_toggle_on: bool,                 // latched state for aim_mode == toggle
@@ -842,6 +844,8 @@ impl Default for AppState {
             drivetrain: DrivetrainFeel::default(),
             drivetrain_profile_idx: 0,
             drivetrain_auto: false,
+            racing_assist_stability: false,
+            racing_assist_drift: false,
             slip_history_rear: VecDeque::new(),
             slip_history_front: VecDeque::new(),
             aim_toggle_on: false,
@@ -2178,6 +2182,26 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                         let cut = ((steer - 0.30) / 0.70) * 0.60;
                         throttle = (throttle as f32 * (1.0 - cut)).round() as u8;
                     }
+                }
+                // Assisted stability: throttle firms up as rear slip rises past 0.40,
+                // making it harder to push through wheelspin — like ESP pushing back.
+                if s.edition == Edition::Full && s.racing_assist_stability
+                    && s.t_on && s.t_slip_rear > 0.40 && s.r2_raw > DEAD_ZONE
+                {
+                    let factor = 1.0 + ((s.t_slip_rear - 0.40) / 0.60).clamp(0.0, 1.0) * 1.5;
+                    throttle = ((throttle as f32) * factor).min(255.0) as u8;
+                }
+                // Assisted drift: throttle lightens in the drift sweet spot
+                // (moderate slip angle + rear wheelspin) so it's easier to hold
+                // a slide at angle without the pedal fighting you.
+                if s.edition == Edition::Full && s.racing_assist_drift
+                    && s.t_on && s.t_slip_rear > 0.30
+                    && s.t_slip_angle > 0.15 && s.t_slip_angle < 0.55
+                    && s.r2_raw > DEAD_ZONE
+                {
+                    let depth = 1.0 - ((s.t_slip_angle - 0.15) / 0.25).clamp(0.0, 1.0);
+                    let factor = 0.40 + depth * 0.60;
+                    throttle = ((throttle as f32) * factor).max(20.0) as u8;
                 }
                 // Keep the resistance engaged whenever the trigger is off its rest
                 // position. The feather ramp makes the force ~0 at the deadzone, so the

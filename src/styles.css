@@ -957,6 +957,18 @@ input[type="range"] { accent-color: var(--profile-col) !important; }
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
+/* ── Custom dropdowns ───────────────────────────────────────────────────── */
+select.lab-select, select.racing-select {
+  appearance: none; -webkit-appearance: none;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 28px 6px 10px; font-size: 13px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+select.lab-select:hover, select.racing-select:hover { border-color: var(--accent); }
+select.lab-select:focus, select.racing-select:focus { outline: none; border-color: var(--accent); }
+
 /* ── Light theme: keep the material frosted, just invert the ground ──────── */
 #app[data-theme="light"] #trigger-section,
 #app[data-theme="light"] #audio-row,

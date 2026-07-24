@@ -274,6 +274,42 @@
       </div>
     </div>
 
+    <!-- ── Racing controls (visible only when Racing profile is active) ───── -->
+    <div id="racing-controls" class="hidden">
+      <div class="selector-row">
+        <span class="selector-label">Telemetry</span>
+        <select id="racing-game-source" class="racing-select">
+          <option value="none">None (simulated)</option>
+          <option value="forza">Forza Horizon / Motorsport</option>
+          <option value="f123">F1 23</option>
+          <option value="assetto">Assetto Corsa</option>
+        </select>
+      </div>
+
+      <div class="selector-row">
+        <span class="selector-label">Drivetrain</span>
+        <select id="racing-dt-profile" class="racing-select">
+          <option value="0">Default</option>
+          <option value="1">Mechanical AWD</option>
+          <option value="2">Hybrid Electric</option>
+          <option value="3">RWD</option>
+          <option value="4">FWD</option>
+        </select>
+        <button id="racing-dt-auto" class="toggle-pill" title="Auto-detect drivetrain from telemetry">Auto-detect</button>
+      </div>
+
+      <div class="selector-row">
+        <span class="selector-label">Assists</span>
+        <button id="racing-assist-stability" class="toggle-pill" title="Throttle firms up near traction limit to help you modulate">Stability+</button>
+        <button id="racing-assist-drift" class="toggle-pill" title="Throttle lightens in the drift sweet spot for easier angle-holding">Drift</button>
+      </div>
+
+      <div class="selector-row" id="racing-telem-row" style="display:none">
+        <span id="telem-status-main" class="telem-off">⬤ Telemetry off</span>
+        <span id="telem-gear-main"></span>
+      </div>
+    </div>
+
   </div><!-- /main -->
 
   <!-- ── Lab — tabbed test bench (Trigger effects + Racing feel) ───────────── -->

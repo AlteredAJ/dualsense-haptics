@@ -98,6 +98,8 @@ fn persist(s: &AppState) {
         drivetrain_profile: Some(s.drivetrain_profile_idx),
         drivetrain_auto: s.drivetrain_auto,
         game_source: Some(s.game_source.as_str().to_string()),
+        racing_assist_stability: s.racing_assist_stability,
+        racing_assist_drift: s.racing_assist_drift,
         motion: Some(settings::MotionSettings {
             steer_enabled:  s.motion.steer_enabled,
             steer_sens:     s.motion.steer_sens,
@@ -678,6 +680,8 @@ pub fn run() {
         if let Some(gs) = saved.game_source {
             s.game_source = GameSource::from_str(&gs);
         }
+        s.racing_assist_stability = saved.racing_assist_stability;
+        s.racing_assist_drift = saved.racing_assist_drift;
         if let Some(m) = saved.motion {
             s.motion.steer_enabled  = m.steer_enabled;
             s.motion.steer_sens     = m.steer_sens;
@@ -759,6 +763,14 @@ fn set_game_source(
     gs.as_str().to_string()
 }
 
+#[tauri::command]
+fn set_racing_assist(state: State<SharedState>, stability: bool, drift: bool) {
+    let mut s = state.lock().unwrap();
+    s.racing_assist_stability = stability;
+    s.racing_assist_drift = drift;
+    persist(&s);
+}
+
     tauri::Builder::default()
         .manage(app_state.clone())
         .manage(LicenseGate::new())
@@ -791,6 +803,7 @@ fn set_game_source(
             set_drivetrain_profile,
             set_drivetrain_auto,
             set_game_source,
+            set_racing_assist,
             set_audio_tune,
         ])
         .setup(move |app| {

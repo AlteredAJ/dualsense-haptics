@@ -24,6 +24,10 @@ pub struct SavedSettings {
     #[serde(default)]
     pub game_source: Option<String>,
     #[serde(default)]
+    pub racing_assist_stability: bool,
+    #[serde(default)]
+    pub racing_assist_drift: bool,
+    #[serde(default)]
     pub motion:      Option<MotionSettings>,
     #[serde(default)]
     pub passthrough: Option<PassthroughSettings>,
