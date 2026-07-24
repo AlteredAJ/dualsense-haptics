@@ -668,6 +668,7 @@ pub struct AppState {
     pub t_on:            bool,  // live RACE data (packets arriving AND IsRaceOn=1)
     pub t_connected:     bool,  // packets physically arriving (real connection proof,
                                 // true even while paused/in menus — distinct from t_on)
+    pub t_last_rx:       Option<Instant>, // timestamp of last valid packet (watchdog)
     pub t_rpm:           f32,   // real engine revs, normalized idle→redline (0..1)
     pub t_accel:         f32,   // longitudinal acceleration (m/s²; + accel, − brake)
     pub t_slip_front:    f32,   // front tire slip ratio (lockup / understeer)
@@ -834,7 +835,7 @@ impl Default for AppState {
             eng_prev_throttle: 0.0,
             eng_lash_frames: 0,
             burble_frames: 0,
-            t_on: false, t_connected: false, t_rpm: 0.0, t_accel: 0.0,
+            t_on: false, t_connected: false, t_last_rx: None, t_rpm: 0.0, t_accel: 0.0,
             t_slip_front: 0.0, t_slip_rear: 0.0, t_slip_combined: 0.0,
             t_surface: 0.0, t_kerb: 0.0, t_speed: 0.0, t_gear: 0, t_prev_gear: 0,
             t_accel_input: 0, t_brake_input: 0,
@@ -1796,7 +1797,11 @@ fn test_report(s: &AppState) -> [u8; 48] {
     b[22] = s.test_left_mode;
     b[23..33].copy_from_slice(&s.test_left_params);
     if s.test_rumble_l > 0 || s.test_rumble_r > 0 {
-        b[1] |= 0x03;                        // bit0 right motor, bit1 left motor
+        // V2 rumble convention (same as with_rumble): HAPTICS_SELECT +
+        // COMPATIBLE_VIBRATION2 — must NOT set bit0 (legacy DS4 path) or
+        // firmware >= 2.24 falls back to the attenuated weak rumble.
+        b[1]  |= 0x02;
+        b[39] |= 0x04;
         b[3] = s.test_rumble_r;
         b[4] = s.test_rumble_l;
     }

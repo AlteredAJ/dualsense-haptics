@@ -79,7 +79,13 @@ pub fn enable() -> Result<(), String> {
         let _ = run(&cli, &["--app-reg", &exe.to_string_lossy()]);
     }
 
-    let listing = run(&cli, &["--dev-gaming"]).unwrap_or_default();
+    let listing = match run(&cli, &["--dev-gaming"]) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("[hidhide] --dev-gaming failed: {e}");
+            return Err(format!("HidHide device listing failed — {e}"));
+        }
+    };
     let mut hid_any = false;
     for path in parse_sony_instances(&listing) {
         if run(&cli, &["--dev-hide", &path]).is_ok() {

@@ -59,23 +59,17 @@ fn gear_offset(len: usize) -> Option<usize> {
 }
 
 pub fn spawn_bridge(state: Arc<Mutex<AppState>>) {
-    // Shared "last packet received" clock, written by whichever port is live and read
-    // by the watchdog. This is the single source of truth for the connection state, so
-    // one idle port timing out can't fight another port that's actively receiving.
-    let last_rx: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
-
     for &port in FORZA_PORTS {
         let state = state.clone();
-        let last_rx = last_rx.clone();
-        thread::spawn(move || receiver_loop(state, last_rx, port));
+        thread::spawn(move || receiver_loop(state, port));
     }
-    thread::spawn(move || watchdog_loop(state, last_rx));
+    thread::spawn(move || watchdog_loop(state));
 }
 
-/// One UDP receiver per candidate port. On a valid packet it stamps `last_rx` and
+/// One UDP receiver per candidate port. On a valid packet it stamps `t_last_rx` and
 /// applies the data; it never clears the connection flags — that's the watchdog's job,
 /// so a quiet port can't stomp a busy one.
-fn receiver_loop(state: Arc<Mutex<AppState>>, last_rx: Arc<Mutex<Option<Instant>>>, port: u16) {
+fn receiver_loop(state: Arc<Mutex<AppState>>, port: u16) {
     loop {
         let addr = format!("0.0.0.0:{port}");
         let socket = match UdpSocket::bind(&addr) {
@@ -99,10 +93,10 @@ fn receiver_loop(state: Arc<Mutex<AppState>>, last_rx: Arc<Mutex<Option<Instant>
                         eprintln!("[forza] first packet on :{port}: {len} bytes from {from}, IsRaceOn={race_on}");
                         diag_first = false;
                     }
-                    if let Ok(mut lr) = last_rx.lock() { *lr = Some(Instant::now()); }
                     if let Ok(mut s) = state.lock() {
                         // Any valid packet = a real, proven connection, even if paused.
                         s.t_connected = true;
+                        s.t_last_rx = Some(Instant::now());
                         apply_packet(&mut s, &buf, len, race_on);
                     }
                 }
@@ -122,20 +116,18 @@ fn receiver_loop(state: Arc<Mutex<AppState>>, last_rx: Arc<Mutex<Option<Instant>
 
 /// Single owner of the "feed stopped" decision. When no port has produced a packet
 /// within STALE_AFTER, both the connection and live-race flags are cleared and the
-/// engine falls back to the inferred model.
-fn watchdog_loop(state: Arc<Mutex<AppState>>, last_rx: Arc<Mutex<Option<Instant>>>) {
+/// engine falls back to the inferred model. `t_last_rx` lives inside AppState so
+/// the staleness check and flag-clear happen under one lock — no TOCTOU window.
+fn watchdog_loop(state: Arc<Mutex<AppState>>) {
     loop {
         thread::sleep(Duration::from_millis(250));
-        let stale = match last_rx.lock() {
-            Ok(lr) => lr.map(|t| t.elapsed() > STALE_AFTER).unwrap_or(true),
-            Err(_) => continue,
-        };
-        if stale {
-            if let Ok(mut s) = state.lock() {
-                if s.t_connected || s.t_on {
-                    s.t_connected = false;
-                    s.t_on = false;
-                }
+        if let Ok(mut s) = state.lock() {
+            let stale = s.t_last_rx
+                .map(|t| t.elapsed() > STALE_AFTER)
+                .unwrap_or(true);
+            if stale && (s.t_connected || s.t_on) {
+                s.t_connected = false;
+                s.t_on = false;
             }
         }
     }
