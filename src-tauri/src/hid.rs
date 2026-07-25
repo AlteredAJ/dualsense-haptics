@@ -2161,13 +2161,25 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                         _ =>
                             (0.20_f32, 0.75_f32),
                     };
+                    // F1/AC tyres have less audible feedback — boost the grind
+                    // amplitude so the pre-lockup warning cuts through clearly.
+                    let grind_amp: f32 = match s.game_source {
+                        GameSource::F123 | GameSource::Assetto => 70.0,
+                        _ => 45.0,
+                    };
+                    // Speed awareness: at high speed, the window between planted
+                    // and locking is narrower (aero downforce), so the warning
+                    // should punch harder. Scale grind up to 1.5x at 300+ km/h.
+                    let speed_boost = if s.t_on && s.t_speed > 0.0 {
+                        1.0 + (s.t_speed / 100.0).clamp(0.0, 1.0) * 0.5
+                    } else { 1.0 };
                     if s.edition == Edition::Full && s.t_on && s.l2_haptic
                         && s.t_slip_front > grind_lo && s.t_slip_front <= grind_hi
                     {
                         let grind = ((s.t_slip_front - grind_lo)
                             / (grind_hi - grind_lo)).clamp(0.0, 1.0);
                         let wave  = (s.road_phase * std::f32::consts::TAU).sin();
-                        f += grind * 45.0 * wave;
+                        f += grind * grind_amp * speed_boost * wave;
                     }
                     // Trailbraking oversteer: rear starting to slide while braking
                     // hard into a corner — the rear slip pushes back through the
@@ -2178,7 +2190,7 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     {
                         let trail = ((s.t_slip_rear - grind_lo)
                             / (grind_hi - grind_lo)).clamp(0.0, 1.0);
-                        f += trail * 30.0;
+                        f += trail * grind_amp * speed_boost * 0.7;
                     }
                     // Surface friction through the brake: rough/gravel surfaces add grain to
                     // the pedal, mirroring the throttle so both feet feel the road texture.
