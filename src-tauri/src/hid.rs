@@ -2235,9 +2235,15 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     // drops and the pedal pushes back — like real hydraulics.
                     if s.edition == Edition::Full && s.t_on && s.l2_haptic {
                         let front_comp = s.t_susp_fl.max(s.t_susp_fr);
-                        if front_comp > 0.45 {
-                            let dive = ((front_comp - 0.45) / 0.55).clamp(0.0, 1.0);
+                        if front_comp > 0.35 {
+                            let dive = ((front_comp - 0.35) / 0.65).clamp(0.0, 1.0);
                             f *= 1.0 + dive * 0.20;
+                        }
+                        // Transient bump jolts through the brake — kerbs and
+                        // crests feed directly into pedal resistance.
+                        let bump = s.t_bump_left.max(s.t_bump_right);
+                        if bump > 0.01 {
+                            f += bump * 1200.0;
                         }
                     }
                     // Surface friction through the brake: rough/gravel surfaces add grain to
@@ -2306,9 +2312,15 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                 // You feel the chassis pitch through the pedals like a real car.
                 if s.edition == Edition::Full && s.t_on && s.r2_raw > DEAD_ZONE {
                     let rear_comp = s.t_susp_rl.max(s.t_susp_rr);
-                    if rear_comp > 0.45 {
-                        let squat = ((rear_comp - 0.45) / 0.55).clamp(0.0, 1.0);
+                    if rear_comp > 0.35 {
+                        let squat = ((rear_comp - 0.35) / 0.65).clamp(0.0, 1.0);
                         throttle = ((throttle as f32) * (1.0 + squat * 0.20)).min(255.0) as u8;
+                    }
+                    // Transient bump jolts — fast suspension movement feeds
+                    // directly into the trigger so you feel every kerb and crest.
+                    let bump = s.t_bump_left.max(s.t_bump_right);
+                    if bump > 0.01 {
+                        throttle = (throttle as f32 + bump * 1200.0).min(255.0) as u8;
                     }
                 }
                 // Assisted stability: throttle firms up as rear slip rises past 0.40,
