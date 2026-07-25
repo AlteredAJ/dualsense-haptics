@@ -2230,15 +2230,14 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                             / (lat_brake_hi - lat_brake_lo)).clamp(0.0, 1.0);
                         f *= 1.0 + lat * 0.30;
                     }
-                    // Suspension-coupled feedback — front dive under braking
-                    // firms the pedal. The harder you brake, the more the nose
-                    // drops and the pedal pushes back — like real hydraulics.
+                    // Suspension-coupled feedback — pedal tracks vertical load.
+                    // Compressed: firmer (nose diving under braking).
+                    // Droop:      lighter (cresting, wheels unloaded).
+                    // Airborne:   almost no resistance.
                     if s.edition == Edition::Full && s.t_on && s.l2_haptic {
-                        let front_comp = s.t_susp_fl.max(s.t_susp_fr);
-                        if front_comp > 0.35 {
-                            let dive = ((front_comp - 0.35) / 0.65).clamp(0.0, 1.0);
-                            f *= 1.0 + dive * 0.20;
-                        }
+                        let front_load = s.t_susp_fl.max(s.t_susp_fr);
+                        let factor = 1.0 + (front_load - 0.5) * 0.40; // 0.80x → 1.20x
+                        f *= factor.clamp(0.30, 1.30);
                         // Transient bump jolts through the brake — kerbs and
                         // crests feed directly into pedal resistance.
                         let bump = s.t_bump_left.max(s.t_bump_right);
@@ -2307,15 +2306,15 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     let lat = ((s.t_slip_angle - lat_lo) / (lat_hi - lat_lo)).clamp(0.0, 1.0);
                     throttle = ((throttle as f32) * (1.0 + lat * 0.35)).min(255.0) as u8;
                 }
-                // Suspension-coupled feedback — rear squat under acceleration
-                // firms the throttle, front dive under braking firms the brake.
-                // You feel the chassis pitch through the pedals like a real car.
+                // Suspension-coupled feedback — the pedal tracks vertical load.
+                // Compressed (1.0): firmer, like the chassis loaded up mid-corner.
+                // Neutral (0.5):   normal.
+                // Droop (0.0):     lighter, like cresting a hill with wheels unloaded.
+                // Airborne (<0.05): almost no resistance — free-spinning wheels.
                 if s.edition == Edition::Full && s.t_on && s.r2_raw > DEAD_ZONE {
-                    let rear_comp = s.t_susp_rl.max(s.t_susp_rr);
-                    if rear_comp > 0.35 {
-                        let squat = ((rear_comp - 0.35) / 0.65).clamp(0.0, 1.0);
-                        throttle = ((throttle as f32) * (1.0 + squat * 0.20)).min(255.0) as u8;
-                    }
+                    let rear_load = s.t_susp_rl.max(s.t_susp_rr);
+                    let factor = 1.0 + (rear_load - 0.5) * 0.40; // 0.80x droop → 1.20x compressed
+                    throttle = ((throttle as f32) * factor.clamp(0.30, 1.30)).min(255.0) as u8;
                     // Transient bump jolts — fast suspension movement feeds
                     // directly into the trigger so you feel every kerb and crest.
                     let bump = s.t_bump_left.max(s.t_bump_right);
