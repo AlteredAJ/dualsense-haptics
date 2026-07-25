@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Universal DualSense Haptics</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <div id="header" data-tauri-drag-region>
+    <span id="header-title">Universal DualSense Haptics</span>
+    <div id="header-right">
+      <span id="conn-status" class="disconnected">● Disconnected</span>
+      <button id="win-minimize" class="win-ctrl" title="Minimize">─</button>
+      <button id="win-close" class="win-ctrl win-close-btn" title="Close">✕</button>
+    </div>
+  </div>
+
+  <div id="main">
+
+    <div class="selector-row">
+      <span class="selector-label">Output</span>
+      <div class="btn-group" id="output-btns">
+        <button class="pill" data-output="dualsense">DualSense</button>
+        <button class="pill" data-output="xbox">Xbox</button>
+      </div>
+    </div>
+
+    <div id="controller-wrap">
+      <div id="ctrl-container">
+        <div id="ctrl-base"></div>
+        <svg id="ctrl-overlay" viewBox="0 0 1117 892"
+             preserveAspectRatio="xMidYMid meet"
+             xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <clipPath id="l2-clip">
+              <path d="M252.212,116.785l-114.214,0c-12.312,0 1.248,-110.916 78.919,-110.916c37.32,-0 51.81,110.916 35.295,110.916Z"/>
+            </clipPath>
+            <clipPath id="r2-clip">
+              <path d="M866.471,116.785l114.214,0c12.312,0 -1.248,-110.916 -78.919,-110.916c-37.32,-0 -51.81,110.916 -35.295,110.916Z"/>
+            </clipPath>
+          </defs>
+          <rect id="ov-l2-raw" class="ov-trig-raw" x="138" y="117" width="114" height="0" clip-path="url(#l2-clip)"/>
+          <rect id="ov-r2-raw" class="ov-trig-raw" x="866" y="117" width="114" height="0" clip-path="url(#r2-clip)"/>
+          <text id="ov-l2-val" class="ov-val" x="145" y="148" text-anchor="start">0</text>
+          <text id="ov-r2-val" class="ov-val" x="972" y="148" text-anchor="end">0</text>
+          <circle id="ov-ls-dot" class="ov-stick-dot" cx="351.764" cy="528.548" r="18"/>
+          <circle id="ov-rs-dot" class="ov-stick-dot" cx="763.456" cy="528.548" r="18"/>
+        </svg>
+      </div>
+    </div>
+
+    <div id="trigger-section">
+      <div class="trigger-row">
+        <span class="trigger-label">L2</span>
+        <div class="bar-track"><div class="bar-fill l2" id="l2-raw-bar" style="width:0%"></div></div>
+        <span class="trigger-val" id="l2-raw-val">0</span>
+      </div>
+      <div class="trigger-row">
+        <span class="trigger-label">R2</span>
+        <div class="bar-track"><div class="bar-fill r2" id="r2-raw-bar" style="width:0%"></div></div>
+        <span class="trigger-val" id="r2-raw-val">0</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="statusbar">
+    <span id="error-msg"></span>
+    <span id="app-version" class="app-version"></span>
+  </div>
+
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,963 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Manrope — the PS5 Mode ("Codex") house face. Variable weight, self-hosted so
+   there's no network dependency in the packaged app. */
+@font-face {
+  font-family: 'Manrope';
+  src: url('assets/Manrope-Variable.ttf') format('truetype');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  /* ── Codex palette ──────────────────────────────────────────────────────
+     Deeper, cooler ground than the old GitHub-dark #0d1117, and surfaces are
+     now translucent GLASS tokens (used with backdrop-filter) rather than flat
+     fills. The old variable NAMES are kept so every downstream rule that reads
+     --surface / --border still works — only what they resolve to changed. */
+  --bg:        #090b10;
+  --bg-2:      #0d1017;
+  --surface:   rgba(255, 255, 255, 0.055);   /* glass fill  */
+  --surface-2: rgba(255, 255, 255, 0.085);   /* raised glass */
+  --border:    rgba(255, 255, 255, 0.12);    /* hairline    */
+  --text:      #f4f6fb;
+  --fg:        #f4f6fb;                       /* legacy alias used by #game-select */
+  --muted:     #9aa3b4;
+  --green:     #5fd98a;
+  --red:       #ff7386;
+  --yellow:    #ffc75d;
+
+  /* Per-profile accents — the app's identity colour system. Kept, just warmed
+     a touch to sit on the darker ground. --profile-col drives the bloom. */
+  --racing:    #4fc3ff;
+  --static:    #b18aff;
+  --gun:       #ff6a4d;
+  --melee:     #ffa552;
+  --audio:     #4fa8ff;
+  --minecraft: #6fe04a;
+
+  --ps-triangle: #5fd98a;
+  --ps-square:   #c79be0;
+  --ps-cross:    #6ea8ff;
+  --ps-circle:   #ff7386;
+
+  --profile-col: var(--racing);
+  /* Alias so PS5 Mode's --focus-bloom idioms port over cleanly. */
+  --focus-bloom: var(--profile-col);
+
+  /* Glass recipe — one blur/shadow used by every panel, so surfaces read as one
+     material. Applied via the .glass-surface helper and the card rules below. */
+  --glass-blur: blur(26px) saturate(175%);
+  --glass-shadow: 0 20px 50px -22px rgba(0, 0, 0, 0.65), inset 0 1px rgba(255, 255, 255, 0.28);
+
+  /* Spacing scale — one rhythm for the whole UI (4px base). */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 22px;
+
+  /* Type scale. */
+  --fs-title: 14px;
+  --fs-body:  12px;
+  --fs-label: 10.5px;
+  --fs-meta:  11px;
+  --tracking: 0.12em;   /* slightly airier labels, Manrope carries it well */
+
+  --radius:   12px;     /* warmer, larger corners than the old 7px */
+}
+
+/* Numeric readouts use tabular figures so live values don't jitter width. */
+.slider-val, .trigger-val, .ov-val, .ov-fval,
+#app-version, .eq-meter, .audio-bar-track { font-variant-numeric: tabular-nums; }
+
+/* Shared glass material — a card that reads as a frosted panel over the lit
+   background rather than a flat filled box. */
+.glass-surface {
+  background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background:
+    radial-gradient(120% 90% at 50% -10%, #131a26 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  user-select: none;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ambient depth: a faint profile-lit vignette so flat #0d1117 reads as a lit
+   panel, not a void. Lives on #app so it can read the active --profile-col;
+   sits behind content and never intercepts clicks. */
+#app { position: relative; }
+#app::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(125% 78% at 50% -10%, color-mix(in oklab, var(--profile-col) 11%, transparent), transparent 58%),
+    radial-gradient(85% 55% at 50% 114%, #00000055, transparent 55%);
+  transition: background 0.45s ease;
+}
+#app > * { position: relative; z-index: 1; }
+/* Cascade the active profile onto #app itself so the vignette is keyed to it. */
+#app[data-profile="racing"]    { --profile-col: var(--racing); }
+#app[data-profile="static"]    { --profile-col: var(--static); }
+#app[data-profile="gun"]       { --profile-col: var(--gun); }
+#app[data-profile="melee"]     { --profile-col: var(--melee); }
+#app[data-profile="audio"]     { --profile-col: var(--audio); }
+#app[data-profile="minecraft"] { --profile-col: var(--minecraft); }
+
+/* ─── Layout ────────────────────────────────────────────────────────────── */
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* Update available banner */
+#update-banner {
+  background: #1c2a1c;
+  border-bottom: 1px solid #2ea043;
+  color: #3fb950;
+  font-size: 11px;
+  padding: 5px 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+#update-banner.hidden { display: none; }
+#update-banner a { color: #58a6ff; text-decoration: none; margin-left: auto; }
+#update-banner a:hover { text-decoration: underline; }
+
+/* License overlay */
+#license-screen {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; z-index: 100;
+}
+#license-screen.hidden { display: none; }
+
+#license-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 32px 40px; width: 420px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+#license-box h2 { font-size: 15px; letter-spacing: 0.05em; }
+#license-box p  { color: var(--muted); font-size: 12px; line-height: 1.5; }
+#license-box a  { color: var(--racing); text-decoration: none; }
+#license-box a:hover { text-decoration: underline; }
+
+#key-input {
+  width: 100%;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 12px; color: var(--text); font-family: inherit; font-size: 13px;
+  outline: none; transition: border-color 0.15s;
+}
+#key-input:focus { border-color: var(--racing); }
+#key-input::placeholder { color: var(--muted); }
+
+#license-submit {
+  width: 100%; padding: 9px;
+  background: var(--racing); color: #000; border: none; border-radius: 4px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.15s;
+}
+#license-submit:hover { opacity: 0.85; }
+#license-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+#license-error { color: var(--red); font-size: 12px; min-height: 16px; }
+
+/* ─── Header ────────────────────────────────────────────────────────────── */
+
+#header {
+  display: flex; align-items: center; justify-content: space-between;
+  /* Windows shows a native title bar above this, so no traffic-light inset is
+     needed — symmetric padding keeps the content aligned with the body below. */
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #1b212b, var(--surface));
+  box-shadow: 0 1px 0 #ffffff08 inset, 0 6px 18px -12px #000;
+  flex-shrink: 0;
+}
+/* Let the user drag the window by the header, since the native title bar is
+   now hidden. Interactive children opt back out below. */
+#header [data-tauri-drag-region] { -webkit-app-region: drag; }
+#header button, #header a, #header .pill,
+#header-right, #conn-status { -webkit-app-region: no-drag; }
+#header-title {
+  font-size: var(--fs-title); font-weight: 600; letter-spacing: 0.02em;
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+}
+/* A small profile-keyed status pip before the title, so the app's active mode
+   is legible at a glance even from the title bar. */
+#header-title::before {
+  content: '';
+  display: inline-block; flex: 0 0 auto;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--profile-col, var(--racing));
+  box-shadow: 0 0 8px var(--profile-col, var(--racing));
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+#header-right { display: flex; align-items: center; gap: 12px; }
+
+#conn-status { font-size: 12px; }
+#conn-status.connected    { color: var(--green); }
+#conn-status.disconnected { color: var(--red); }
+
+.view-btn {
+  padding: 3px 10px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  font-family: inherit; font-size: 11px; cursor: pointer; transition: all 0.12s;
+}
+.view-btn:hover { border-color: var(--text); color: var(--text); }
+
+/* ─── Main ──────────────────────────────────────────────────────────────── */
+
+#main {
+  flex: 1; display: flex; flex-direction: column;
+  gap: var(--sp-2); padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  overflow-y: auto; overflow-x: hidden; min-height: 0;
+}
+
+/* ─── Selectors ─────────────────────────────────────────────────────────── */
+
+.selector-row { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
+.selector-label {
+  color: var(--muted); font-size: var(--fs-label); min-width: 72px;
+  text-transform: uppercase; letter-spacing: var(--tracking); font-weight: 600;
+}
+.btn-group { display: flex; gap: var(--sp-1); }
+
+.pill {
+  padding: 4px 13px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  font-family: inherit; font-size: var(--fs-body); cursor: pointer; transition: all 0.12s;
+}
+.pill:hover { border-color: var(--text); color: var(--text); }
+
+.pill.active-racing  { border-color: var(--racing);  color: var(--racing);  background: #00c8ff18; }
+.pill.active-static  { border-color: var(--static);  color: var(--static);  background: #cc44ff18; }
+.pill.active-gun     { border-color: var(--gun);     color: var(--gun);     background: #ff450018; }
+.pill.active-melee   { border-color: var(--melee);   color: var(--melee);   background: #ff8c0018; }
+.pill.active-audio   { border-color: var(--audio);   color: var(--audio);   background: #1a8fff18; }
+.pill.active-minecraft { border-color: var(--minecraft); color: var(--minecraft); background: #50dc2818; }
+
+.pill.str-active-0 { border-color: var(--muted);  color: var(--muted);  background: #8b949e18; }
+.pill.str-active-1 { border-color: #d0d7de;       color: #d0d7de;       background: #d0d7de12; }
+.pill.str-active-2 { border-color: var(--yellow);  color: var(--yellow);  background: #d2992218; }
+.pill.str-active-3 { border-color: var(--red);     color: var(--red);     background: #f8514918; }
+
+/* Active pills read as lit: a tight outer glow in the pill's own color.
+   Targets any active state via the shared active- class prefix. */
+.pill[class*="active-"] {
+  box-shadow: 0 0 13px -5px currentColor;
+}
+
+/* ─── Controller wrap ───────────────────────────────────────────────────── */
+
+#controller-wrap {
+  flex: 1; display: flex;
+  align-items: center; justify-content: center;
+  min-height: 0;
+}
+
+#ctrl-container {
+  position: relative;
+  /* lock to the DS5 SVG aspect ratio 1117:892 ≈ 1.251 */
+  width: 100%;
+  aspect-ratio: 1117 / 892;
+  max-height: 100%;
+  /* prevent it growing taller than the available column space */
+  max-width: min(100%, calc(100% * 1117 / 892));
+}
+
+#ctrl-base {
+  position: absolute; inset: 0;
+}
+#ctrl-base svg {
+  width: 100%; height: 100%;
+  display: block;
+}
+
+#ctrl-overlay {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Profile color cascade into the overlay */
+#app[data-profile="racing"] #ctrl-container { --profile-col: var(--racing); }
+#app[data-profile="static"] #ctrl-container { --profile-col: var(--static); }
+#app[data-profile="gun"]    #ctrl-container { --profile-col: var(--gun);    }
+#app[data-profile="melee"]  #ctrl-container { --profile-col: var(--melee);  }
+#app[data-profile="audio"]  #ctrl-container { --profile-col: var(--audio);  }
+
+/* Overlay elements */
+.ov-trig-raw { fill: var(--profile-col); opacity: 0.80; }
+.ov-trig-out { fill: var(--profile-col); opacity: 0.30; }
+.ov-stick-dot { fill: var(--profile-col); opacity: 0.90; transition: cx 0.04s linear, cy 0.04s linear; }
+
+.ov-touch-dot { fill: var(--profile-col); opacity: 0.75; transition: cx 0.04s linear, cy 0.04s linear; }
+
+.ov-val  {
+  fill: var(--muted);
+  font-size: 32px;
+  font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+}
+.ov-fval {
+  fill: var(--profile-col);
+  font-size: 26px;
+  font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+  opacity: 0.65;
+}
+
+/* ─── View modes ────────────────────────────────────────────────────────── */
+
+#trigger-section { display: none; flex-shrink: 0; }
+#app.compact #trigger-section { display: flex; }
+#app.compact #controller-wrap { display: none; }
+
+/* ─── Compact trigger bars ──────────────────────────────────────────────── */
+
+#trigger-section {
+  flex-direction: column; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 14px 16px;
+}
+
+.trigger-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 50px 1fr 50px;
+  align-items: center; gap: 10px; font-size: 12px;
+}
+.trigger-label { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
+.trigger-val   { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+.bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 3px; transition: width 0.04s linear; }
+.bar-fill.l2, .bar-fill.r2 { background: var(--racing); }
+
+[data-profile="gun"]    .bar-fill { background: var(--gun);    }
+[data-profile="melee"]  .bar-fill { background: var(--melee);  }
+[data-profile="audio"]  .bar-fill { background: var(--audio);  }
+[data-profile="static"] .bar-fill { background: var(--static); }
+
+/* ─── Controls ──────────────────────────────────────────────────────────── */
+
+#controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+
+.toggle-pill {
+  padding: 4px 14px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--bg);
+  font-family: inherit; font-size: 12px; cursor: pointer; transition: all 0.12s;
+}
+.toggle-pill.on  { border-color: var(--green); color: var(--green); background: #3fb95018; }
+.toggle-pill.off { border-color: var(--border); color: var(--muted); }
+
+#gun-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#gun-controls.hidden { display: none; }
+#di2-controls.hidden { display: none; }
+#di2-melee-btns, #di2-gun-btns, #weapon-btns { flex-wrap: wrap; }
+.di2-group-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin: 6px 0 2px; opacity: 0.8; }
+#game-select {
+  background: #1a1a1f; color: var(--fg); border: 1px solid #333;
+  border-radius: 6px; padding: 4px 8px; font-size: 13px;
+}
+.mode-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.output-hint { color: var(--muted); font-size: 11px; margin-left: 8px; flex: 1; min-width: 0; }
+
+.gun-slider { display: flex; align-items: center; gap: 6px; }
+.gun-slider[hidden] { display: none; }
+.gun-slider input[type="range"] {
+  width: 88px; height: 3px; cursor: pointer;
+  accent-color: var(--gun);
+  background: var(--border);
+}
+.slider-val {
+  color: var(--gun); font-size: 11px;
+  font-variant-numeric: tabular-nums; min-width: 60px;
+}
+
+/* ─── Status bar ─────────────────────────────────────────────────────────── */
+
+#statusbar {
+  border-top: 1px solid var(--border);
+  padding: 6px 16px; font-size: 11px; color: var(--muted);
+  display: flex; gap: 16px;
+  background: linear-gradient(0deg, #1b212b, var(--surface));
+  box-shadow: 0 -1px 0 #ffffff06 inset;
+  flex-shrink: 0;
+}
+#statusbar span { white-space: nowrap; }
+#error-msg { color: var(--red); }
+#telem-status.telem-off    { color: var(--muted); opacity: 0.45; }
+#telem-status.telem-paused { color: var(--yellow); }
+#telem-status.telem-on     { color: var(--racing); animation: ds-pulse 2.4s ease-in-out infinite; }
+.key-hints-text { margin-left: auto; opacity: 0.4; font-size: 10px; letter-spacing: 0.03em; }
+.app-version    { opacity: 0.35; font-size: 10px; letter-spacing: 0.05em; font-variant-numeric: tabular-nums; }
+
+/* ─── Audio row ─────────────────────────────────────────────────────────── */
+
+#audio-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 16px; display: none; flex-shrink: 0;
+}
+#audio-row.visible { display: block; }
+.audio-bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.audio-bar-fill  { height: 100%; background: var(--audio); border-radius: 4px; transition: width 0.04s linear; }
+.audio-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+#mc-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 16px; display: none; flex-shrink: 0;
+  align-items: center; gap: 10px; font-size: 13px;
+}
+#mc-row.visible { display: flex; }
+.mc-conn  { color: var(--muted); }
+.mc-conn.on { color: var(--minecraft); }
+.mc-sep   { color: var(--border); }
+.mc-label { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
+.mc-item  { color: var(--minecraft); font-weight: 600; text-transform: capitalize; }
+.mc-action {
+  margin-left: auto; color: var(--minecraft); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--minecraft); border-radius: 4px; padding: 2px 8px;
+}
+
+/* ─── Free tier — locked controls & upgrade banner ──────────────────────── */
+
+.locked {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  position: relative;
+}
+.locked::after {
+  content: '🔒';
+  font-size: 9px;
+  position: absolute;
+  top: 2px; right: 3px;
+  pointer-events: none;
+}
+
+#upgrade-banner {
+  background: linear-gradient(135deg, #1a1f2e, #161b22);
+  border-bottom: 1px solid #30363d;
+  padding: 6px 14px;
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; color: var(--muted);
+  flex-shrink: 0;
+}
+#upgrade-banner strong { color: var(--text); }
+#upgrade-banner.hidden { display: none; }
+#upgrade-top-row { display: flex; align-items: center; gap: 8px; }
+#upgrade-top-row > span { flex: 1; }
+#upgrade-expand-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--racing); font-size: 11px; font-family: inherit;
+  padding: 2px 8px; cursor: pointer; white-space: nowrap;
+}
+#upgrade-expand-btn:hover { border-color: var(--racing); }
+#upgrade-dismiss {
+  background: none; border: none; color: var(--muted);
+  font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+  flex-shrink: 0;
+}
+#upgrade-dismiss:hover { color: var(--text); }
+#upgrade-key-row { display: flex; gap: 8px; align-items: center; }
+#upgrade-key-row input {
+  flex: 1; background: #0d1117; border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); padding: 5px 10px;
+  font-size: 11px; font-family: monospace; letter-spacing: 0.05em;
+  outline: none;
+}
+#upgrade-key-row input:focus { border-color: var(--racing); }
+#upgrade-key-row button {
+  background: var(--racing); color: #000; border: none;
+  border-radius: 6px; padding: 5px 14px; font-size: 11px;
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+#upgrade-key-row button:hover { filter: brightness(1.15); }
+#license-error { color: var(--red); font-size: 11px; min-height: 14px; }
+#gumroad-link { color: var(--racing); font-size: 11px; text-decoration: none; white-space: nowrap; }
+#gumroad-link:hover { text-decoration: underline; }
+
+/* ─── Lab (tabbed) ─────────────────────────────────────────────────────────── */
+#lab-panel {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(13, 17, 23, 0.985);
+  padding: 12px 16px 16px;
+  display: flex; flex-direction: column; gap: 9px;
+  overflow-y: auto;
+}
+#lab-panel.hidden { display: none; }
+.lab-tab-content { display: flex; flex-direction: column; gap: 9px; }
+.lab-tab-content.hidden { display: none; }
+#lab-header {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border); padding-bottom: 8px;
+}
+.lab-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.lab-tab {
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  border-radius: 5px; cursor: pointer; padding: 5px 12px; font-family: inherit;
+  font-size: 13px; font-weight: 600; transition: all 0.08s;
+}
+.lab-tab:hover { border-color: var(--text); color: var(--text); }
+.lab-tab.active { border-color: var(--gun); color: var(--gun); background: #ff450018; }
+#lab-close {
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  border-radius: 4px; cursor: pointer; padding: 2px 9px; font-size: 13px;
+}
+#lab-close:hover { border-color: var(--text); color: var(--text); }
+.lab-row { display: flex; align-items: center; gap: 10px; }
+#lab-mode {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px; padding: 5px 8px; font-family: inherit;
+  font-size: 12px;
+}
+#lab-mode:focus { border-color: var(--gun); outline: none; }
+.lab-hint {
+  color: var(--muted); font-size: 11px; line-height: 1.4;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 9px; min-height: 14px;
+}
+.lab-live {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px 10px;
+}
+.lab-live-toggle { white-space: nowrap; }
+.lab-live-toggle.on { border-color: var(--green); color: var(--green); background: #3fb95018; }
+.lab-live-hint { color: var(--muted); font-size: 11px; line-height: 1.4; flex: 1; min-width: 160px; }
+.lab-sel-btn.selected { border-color: var(--green); color: var(--green); background: #3fb95018; }
+.feel-editor { display: flex; flex-direction: column; gap: 6px; }
+.feel-editor:empty { display: none; }
+.feel-field { display: flex; align-items: center; gap: 10px; }
+.feel-field label { color: var(--muted); font-size: 11px; min-width: 96px; }
+.feel-field input[type="range"] { flex: 1; accent-color: var(--green); height: 4px; }
+.feel-field .feel-val {
+  color: var(--green); font-size: 12px; min-width: 36px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.feel-save:hover  { border-color: var(--green); color: var(--green); }
+.feel-reset:hover { border-color: var(--melee); color: var(--melee); }
+#lab-params { display: flex; flex-direction: column; gap: 7px; }
+.lab-param { display: flex; align-items: center; gap: 10px; }
+.lab-param-label { color: var(--muted); font-size: 11px; min-width: 92px; }
+.lab-param input[type="range"], #lab-rl, #lab-rr {
+  flex: 1; accent-color: var(--gun); height: 4px;
+}
+.lab-param .slider-val, #lab-rl-val, #lab-rr-val {
+  color: var(--gun); font-size: 12px; min-width: 30px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.lab-actions { gap: 8px; margin-top: 4px; }
+#lab-hold.on { border-color: var(--gun); color: var(--gun); background: #ff450022; }
+
+.lab-section-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+#lab-presets, .lab-preset-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.lab-stop:hover { border-color: var(--gun); color: var(--gun); }
+.lab-preset {
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  border-radius: 5px; cursor: pointer; padding: 7px 11px; font-family: inherit;
+  font-size: 12px; font-weight: 600; transition: all 0.08s;
+}
+.lab-preset:hover { border-color: var(--gun); color: var(--gun); }
+.lab-preset:active { background: #ff450033; transform: scale(0.96); }
+.lab-preset .lab-preset-sub { display: block; font-weight: 400; font-size: 9px; color: var(--muted); margin-top: 1px; }
+
+/* Racing tab — inline sliders live in .lab-row (no .lab-param wrapper) */
+.lab-tab-content[data-tab="racing"] .lab-row input[type="range"] { flex: 1; accent-color: var(--gun); height: 4px; }
+.lab-tab-content[data-tab="racing"] .lab-row .slider-val {
+  color: var(--gun); font-size: 12px; min-width: 34px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.lab-tab-content[data-tab="racing"] .lab-row .selector-label { min-width: 92px; color: var(--muted); font-size: 11px; }
+#rc-preview.on { border-color: var(--gun); color: var(--gun); background: #ff450022; }
+#racing-presets { display: flex; flex-wrap: wrap; gap: 7px; }
+
+/* Two-column knob grid with alt-text descriptions under each slider */
+.rc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 24px;
+  align-items: start;
+}
+.rc-span { grid-column: 1 / -1; margin-top: 5px; }
+.rc-knob { display: flex; flex-direction: column; gap: 2px; padding: 2px 0; }
+.rc-knob-top { display: flex; align-items: center; gap: 10px; }
+.rc-knob-top .selector-label { min-width: 84px; color: var(--muted); font-size: 11px; }
+.rc-knob-top input[type="range"] { flex: 1; accent-color: var(--gun); height: 4px; }
+.rc-knob-top .slider-val {
+  color: var(--gun); font-size: 12px; min-width: 34px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rc-knob-desc {
+  color: var(--muted); font-size: 9px; line-height: 1.3;
+  opacity: 0.75; padding-left: 0;
+}
+
+/* ─── Lightweight motion layer ──────────────────────────────────────────────
+   GPU-cheap micro-interactions: color/opacity/transform transitions plus two
+   subtle keyframes. Everything is disabled under prefers-reduced-motion. */
+
+.pill, .toggle-pill, button {
+  transition: border-color 0.18s ease, color 0.18s ease,
+              background 0.18s ease, transform 0.07s ease, opacity 0.15s ease;
+}
+.pill:active, .toggle-pill:active, button:active { transform: translateY(1px) scale(0.985); }
+
+/* Output/raw trigger bars ease toward their value instead of snapping. */
+.bar-fill, [id$="-bar"] { transition: width 0.08s linear; }
+
+/* Profile panels that toggle visibility fade + lift in. */
+#audio-row.visible, #mc-row.visible, #gun-controls:not(.hidden) {
+  animation: ds-fade-in 0.22s ease both;
+}
+@keyframes ds-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Live connection / mod dots breathe softly when active. */
+.connected, .mc-conn.on { animation: ds-pulse 2.4s ease-in-out infinite; }
+@keyframes ds-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* The Minecraft action badge pops in when an action starts. */
+.mc-action { animation: ds-badge-pop 0.18s ease both; }
+@keyframes ds-badge-pop {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Lab Pro gate ─────────────────────────────────────────────────────────── */
+#lab-toggle.pro-locked { opacity: 0.75; }
+
+#lab-upsell {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+#lab-upsell.hidden { display: none; }
+#lab-upsell-card {
+  position: relative;
+  max-width: 360px; width: calc(100% - 48px);
+  background: #1b1d22; border: 1px solid #34373f; border-radius: 12px;
+  padding: 22px 22px 20px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+#lab-upsell-close {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none; color: #8a8f99; font-size: 15px; cursor: pointer;
+}
+#lab-upsell-close:hover { color: #e6e8ec; }
+#lab-upsell-title { font-size: 16px; font-weight: 600; color: #f0f2f5; margin-bottom: 10px; }
+#lab-upsell-body  { font-size: 13px; line-height: 1.5; color: #b6bac2; margin-bottom: 18px; }
+.lab-upsell-cta {
+  display: inline-block; text-decoration: none;
+  background: #4f8cff; color: #fff; font-weight: 600; font-size: 14px;
+  padding: 10px 18px; border-radius: 8px;
+}
+.lab-upsell-cta:hover { background: #3d7bf0; }
+
+/* ─── Game rumble passthrough row ──────────────────────────────────────────── */
+#pt-row { gap: 8px; }
+#pt-row input[type="range"] { width: 90px; }
+#pt-row .slider-val { min-width: 34px; }
+.pt-meter {
+  flex: 1; height: 6px; min-width: 40px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  overflow: hidden;
+}
+#pt-meter-fill {
+  height: 100%; width: 0%;
+  background: var(--gun);
+  transition: width 0.06s linear;
+}
+
+/* Inline note inside a Lab section label (e.g. "Drivetrain feel · applies live"). */
+.rc-span-note { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* Live tach in the Racing Lab — revs + driveline load bars. */
+.rc-tach { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 2px; }
+.rc-tach-row { display: flex; align-items: center; gap: var(--sp-2); }
+.rc-tach-label {
+  font-size: var(--fs-label); color: var(--muted); letter-spacing: var(--tracking);
+  font-weight: 600; min-width: 42px;
+}
+.rc-tach-track {
+  flex: 1; height: 7px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.rc-tach-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--racing), var(--yellow) 78%, var(--red));
+  transition: width 0.05s linear;
+}
+.rc-tach-fill.load {
+  background: linear-gradient(90deg, var(--racing), var(--gun));
+}
+
+/* ─── Audio haptic EQ ──────────────────────────────────────────────────────── */
+#audio-eq { display: none; flex-direction: column; gap: var(--sp-2); flex-shrink: 0; }
+#audio-eq.visible { display: flex; animation: ds-fade-in 0.22s ease both; }
+.eq-band {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: var(--sp-2) var(--sp-3);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.eq-band-head { display: flex; align-items: baseline; gap: var(--sp-2); }
+.eq-band-name {
+  font-size: var(--fs-label); font-weight: 700; letter-spacing: var(--tracking);
+  color: var(--audio);
+}
+.eq-band-desc { font-size: var(--fs-meta); color: var(--muted); }
+.eq-meter { height: 5px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.eq-meter-fill {
+  height: 100%; width: 0%; background: var(--audio);
+  transition: width 0.06s linear;
+}
+.eq-row { display: flex; align-items: center; gap: var(--sp-2); }
+.eq-row input[type="range"] { flex: 1; }
+.eq-gate-row { padding: 0 var(--sp-1); }
+.eq-hint {
+  font-size: var(--fs-meta); color: var(--audio); opacity: 0.85;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+/* ─── Motion panel (tilt steering + gyro aim) ──────────────────────────────── */
+:root { --motion: #19c3b2; }
+
+#motion-panel {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(13, 17, 23, 0.985);
+  padding: 12px 16px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+  overflow-y: auto;
+}
+#motion-panel.hidden { display: none; }
+
+#motion-header {
+  display: flex; align-items: baseline; gap: 12px;
+  border-bottom: 1px solid var(--border); padding-bottom: 8px;
+}
+#motion-title { font-size: 14px; font-weight: 700; color: var(--text); }
+#motion-sub   { font-size: 11px; color: var(--muted); }
+#motion-close {
+  margin-left: auto;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  border-radius: 4px; cursor: pointer; padding: 2px 9px; font-size: 13px;
+}
+#motion-close:hover { border-color: var(--text); color: var(--text); }
+
+/* Live visualization */
+#motion-viz {
+  display: flex; gap: 28px; justify-content: center;
+  padding: 6px 0 2px;
+}
+.viz-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#wheel-svg, #aim-svg { width: 116px; height: 116px; }
+.viz-label {
+  font-size: 10px; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase;
+}
+.viz-label span { color: var(--motion); font-weight: 700; }
+
+.wheel-rim   { fill: none; stroke: var(--motion); stroke-width: 4; opacity: 0.9; }
+.wheel-hub   { fill: var(--motion); opacity: 0.85; }
+.wheel-spoke { stroke: var(--motion); stroke-width: 3.5; opacity: 0.7; stroke-linecap: round; }
+.wheel-mark  { stroke: var(--motion); stroke-width: 4; opacity: 0.55; stroke-linecap: round; }
+.wheel-top   { stroke: var(--muted); stroke-width: 3; stroke-linecap: round; }
+#wheel-rotor { transition: transform 0.05s linear; transform-box: view-box; }
+
+.aim-box   { fill: none; stroke: var(--border); stroke-width: 2; }
+.aim-cross { stroke: var(--border); stroke-width: 1.5; opacity: 0.6; }
+.aim-dot   { fill: var(--motion); opacity: 0.55; transition: cx 0.05s linear, cy 0.05s linear, opacity 0.15s ease; }
+.aim-dot.live { opacity: 1; filter: drop-shadow(0 0 5px var(--motion)); }
+
+/* Sections */
+.motion-section {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.motion-section-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.motion-hint { font-size: 11px; color: var(--muted); }
+.motion-grid { display: flex; flex-direction: column; gap: 9px; }
+.m-row { display: flex; align-items: center; gap: 10px; }
+.m-row .selector-label { min-width: 110px; }
+.m-row input[type="range"] { flex: 1; }
+
+/* Motion toggle/segmented active states keyed to the motion accent */
+#motion-panel .toggle-pill.on {
+  border-color: var(--motion); color: var(--motion); background: #19c3b218;
+}
+#motion-panel .pill.m-active {
+  border-color: var(--motion); color: var(--motion); background: #19c3b218;
+}
+#motion-toggle.on { border-color: var(--motion); color: var(--motion); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Appearance toggle. The default remains the original dark cockpit. */
+#app[data-theme="light"] {
+  --bg: #eef3f8;
+  --surface: #ffffff;
+  --border: #c8d2dd;
+  --text: #182331;
+  --muted: #5c6b7a;
+  color: var(--text);
+}
+#app[data-theme="light"]::before {
+  background:
+    radial-gradient(125% 78% at 50% -10%, color-mix(in oklab, var(--profile-col) 14%, transparent), transparent 58%),
+    radial-gradient(85% 55% at 50% 114%, #8da7c126, transparent 55%);
+}
+#app[data-theme="light"] #header {
+  background: linear-gradient(180deg, #ffffff, #e9eff5);
+  box-shadow: 0 1px 0 #ffffff inset, 0 6px 18px -12px #68798c;
+}
+#app[data-theme="light"] .pill,
+#app[data-theme="light"] .toggle-pill,
+#app[data-theme="light"] .view-btn,
+#app[data-theme="light"] .lab-preset,
+#app[data-theme="light"] #motion-close,
+#app[data-theme="light"] #lab-close {
+  background: #f7fafc;
+  color: #536273;
+}
+#app[data-theme="light"] .bar-track,
+#app[data-theme="light"] .audio-bar-track,
+#app[data-theme="light"] .eq-meter,
+#app[data-theme="light"] .pt-meter,
+#app[data-theme="light"] .rc-tach-track { background: #dfe7ef; }
+#app[data-theme="light"] #trigger-section,
+#app[data-theme="light"] .eq-band,
+#app[data-theme="light"] .motion-section { box-shadow: 0 4px 16px #8ca0b321; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CODEX DESIGN LAYER
+   Ports the PS5 Mode visual language onto this app: glass surfaces, Manrope,
+   accent-bloom focus, warmer radii. Appended last so it upgrades the surfaces
+   above without rewriting each rule; every original class hook is preserved so
+   main.js keeps working untouched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Frosted panels ───────────────────────────────────────────────────────
+   The cards that were flat `var(--surface)` fills become one frosted material. */
+#trigger-section, #audio-row, #mc-row, #license-box, #lab-mode,
+.lab-hint, .lab-live, .eq-band, .motion-section, .pt-row {
+  background: linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.02)) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 18px 44px -24px rgba(0,0,0,.6), inset 0 1px rgba(255,255,255,.22) !important;
+}
+
+/* ── Header & status bar — same glass, edge-anchored ─────────────────────── */
+#header {
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.015)) !important;
+  border-bottom: 1px solid var(--border) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 1px 0 rgba(255,255,255,.14) inset, 0 10px 26px -18px #000 !important;
+}
+#header-title { font-weight: 800; letter-spacing: -0.01em; }
+#statusbar {
+  background: linear-gradient(0deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015)) !important;
+  border-top: 1px solid var(--border) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* ── Pills / toggles / buttons — glass capsules with an accent-bloom on ──────
+   the active state, matching the launcher's focus treatment. */
+.pill, .toggle-pill, .view-btn, .lab-tab, .lab-preset,
+.view-btn, button.lab-sel-btn {
+  background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03)) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--muted);
+  border-radius: 999px;
+  font-weight: 650;
+}
+.lab-tab, .lab-preset, .lab-mode { border-radius: var(--radius) !important; }
+.pill:hover, .toggle-pill:hover, .view-btn:hover, .lab-tab:hover, .lab-preset:hover {
+  color: var(--text); border-color: rgba(255,255,255,0.3) !important;
+}
+
+/* Active / on pills: fill + glow keyed to the element's own accent colour. */
+.pill[class*="active-"], .toggle-pill.on, .lab-tab.active, .view-btn.active, .lab-sel-btn.selected {
+  background: color-mix(in srgb, currentColor 16%, rgba(255,255,255,0.04)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 40%, transparent),
+              0 0 18px -4px currentColor,
+              inset 0 1px rgba(255,255,255,.28) !important;
+}
+.toggle-pill.on { color: var(--green); }
+
+/* ── Inputs — glass fields ───────────────────────────────────────────────── */
+#key-input, #game-select, #lab-mode, #upgrade-key-row input {
+  background: rgba(0,0,0,0.28) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  color: var(--text) !important;
+  font-family: 'Manrope', sans-serif;
+}
+#key-input:focus, #game-select:focus, #lab-mode:focus, #upgrade-key-row input:focus {
+  border-color: color-mix(in srgb, var(--profile-col) 70%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--profile-col) 22%, transparent) !important;
+  outline: none;
+}
+/* License-key + trigger-overlay numerics stay monospace for column alignment. */
+#key-input, #upgrade-key-row input, .ov-val, .ov-fval {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace !important;
+}
+
+/* ── Range sliders — accent-tinted track, rounded thumb ──────────────────── */
+input[type="range"] { accent-color: var(--profile-col) !important; }
+
+/* ── Overlays / modals — deeper frosted scrim + glass card ───────────────── */
+#lab-panel, #lab-upsell, #license-screen {
+  background: rgba(6,8,13,0.72) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+#lab-upsell-card, #license-box {
+  border-radius: 18px !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* ── Upgrade / update banners — glass strip, accent link ─────────────────── */
+#upgrade-banner {
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)) !important;
+  border-bottom: 1px solid var(--border) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* ── Light theme: keep the material frosted, just invert the ground ──────── */
+#app[data-theme="light"] #trigger-section,
+#app[data-theme="light"] #audio-row,
+#app[data-theme="light"] #mc-row,
+#app[data-theme="light"] .eq-band,
+#app[data-theme="light"] .motion-section,
+#app[data-theme="light"] #header,
+#app[data-theme="light"] #statusbar {
+  background: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(255,255,255,0.55)) !important;
+  border-color: rgba(10,14,22,0.10) !important;
+}
