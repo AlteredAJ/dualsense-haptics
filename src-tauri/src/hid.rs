@@ -2168,6 +2168,12 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                         _ =>
                             (0.20_f32, 0.75_f32),
                     };
+                    let (lat_brake_lo, lat_brake_hi) = match s.game_source {
+                        GameSource::F123 | GameSource::Assetto =>
+                            (0.05_f32, 0.20_f32),
+                        _ =>
+                            (0.08_f32, 0.25_f32),
+                    };
                     // F1/AC tyres have less audible feedback — boost the grind
                     // amplitude so the pre-lockup warning cuts through clearly.
                     let grind_amp: f32 = match s.game_source {
@@ -2198,6 +2204,15 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                         let trail = ((s.t_slip_rear - grind_lo)
                             / (grind_hi - grind_lo)).clamp(0.0, 1.0);
                         f += trail * grind_amp * speed_boost * 0.7;
+                    }
+                    // Lateral load feedback — cornering G-force firms the brake
+                    // like the steering wheel loading up, communicating grip limit.
+                    if s.edition == Edition::Full && s.t_on && s.l2_haptic
+                        && s.t_slip_angle > lat_brake_lo
+                    {
+                        let lat = ((s.t_slip_angle - lat_brake_lo)
+                            / (lat_brake_hi - lat_brake_lo)).clamp(0.0, 1.0);
+                        f *= 1.0 + lat * 0.30;
                     }
                     // Surface friction through the brake: rough/gravel surfaces add grain to
                     // the pedal, mirroring the throttle so both feet feel the road texture.
@@ -2237,6 +2252,21 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                         let cut = ((steer - 0.30) / 0.70) * 0.60;
                         throttle = (throttle as f32 * (1.0 - cut)).round() as u8;
                     }
+                }
+                // Lateral load feedback: as cornering G-force builds, the triggers
+                // firm up like a steering wheel loading — you feel the car squatting
+                // into the corner before the tyres let go.
+                let (lat_lo, lat_hi) = match s.game_source {
+                    GameSource::F123 | GameSource::Assetto =>
+                        (0.05_f32, 0.20_f32),
+                    _ =>
+                        (0.08_f32, 0.25_f32),
+                };
+                if s.edition == Edition::Full && s.t_on
+                    && s.t_slip_angle > lat_lo && s.r2_raw > DEAD_ZONE
+                {
+                    let lat = ((s.t_slip_angle - lat_lo) / (lat_hi - lat_lo)).clamp(0.0, 1.0);
+                    throttle = ((throttle as f32) * (1.0 + lat * 0.35)).min(255.0) as u8;
                 }
                 // Assisted stability: throttle firms up as rear slip rises past 0.40,
                 // making it harder to push through wheelspin — like ESP pushing back.
