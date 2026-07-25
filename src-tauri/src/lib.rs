@@ -6,6 +6,7 @@ mod hid;
 mod signal;
 mod license;
 mod mc;
+mod obfuscate;
 mod settings;
 #[cfg(windows)]
 mod hidhide;
@@ -603,6 +604,11 @@ fn set_window_size(app: tauri::AppHandle, width: f64, height: f64) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Binary integrity check — prevents tampered/cracked binaries from
+    // running Full-tier features. Debug builds skip this.
+    #[cfg(not(debug_assertions))]
+    obfuscate::verify_integrity();
+
     // Windows: this machine has a Software Restriction Policy that blocks
     // C:\Program Files (x86)\Microsoft\Edge* — which also matches EdgeWebView, so the
     // stock WebView2 runtime can't spawn its browser process and the window renders
