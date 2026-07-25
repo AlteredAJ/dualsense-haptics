@@ -397,6 +397,7 @@ const AERO_MAX_BOOST:         f32 = 0.30;  // +30% resistance at full aero speed
 // shouldn't feel the same. The progressive curve still builds on top above the zone.
 const RACING_BRAKE_FLOOR_PCT:    u16 = 90;
 const RACING_THROTTLE_FLOOR_PCT: u16 = 70;
+const THROTTLE_DAMPER_FLOOR:    u8 = 38; // minimum resistance off-rest — hydraulic preload
 // Racing L2 brake curve zones (0-255 raw range)
 const L2_LOW_END:             u8 = 38;  // 15% of 255 — end of feather zone
 const L2_RAMP_END:            u8 = 242; // 95% of 255 — end of exponential ramp
@@ -1284,7 +1285,7 @@ fn racing_forces(s: &AppState) -> (u8, u8) {
     let throttle = if s.r2_raw > DEAD_ZONE {
         // Take-up depth is live-tunable (Racing Lab); defaults to THROTTLE_FEATHER_END.
         let fe = s.drivetrain.take_up.max(DEAD_ZONE + 1);
-        if s.r2_raw <= fe {
+        let base = if s.r2_raw <= fe {
             // Ramp from a lighter floor so the gas resists off rest but stays easier
             // to push than the brake.
             let floor = st.throttle_start as u16 * RACING_THROTTLE_FLOOR_PCT / 100;
@@ -1294,7 +1295,11 @@ fn racing_forces(s: &AppState) -> (u8, u8) {
             let tr = clamp01((s.r2_raw as f32 - fe as f32) / (255.0 - fe as f32));
             (st.throttle_start as f32
                 + (st.throttle_end as f32 - st.throttle_start as f32) * tr.powf(st.throttle_exp)).round() as u8
-        }
+        };
+        // Damper floor: minimum resistance the moment the trigger leaves the
+        // deadzone, so the initial push never feels loose or empty. This is the
+        // hydraulic preload — like the weight of the pedal linkage itself.
+        base.max(THROTTLE_DAMPER_FLOOR) as u8
     } else { 0 };
     (brake, throttle)
 }
