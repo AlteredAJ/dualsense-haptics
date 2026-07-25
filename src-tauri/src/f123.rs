@@ -14,7 +14,7 @@
 
 use crate::hid::AppState;
 use crate::signal::{
-    self, EWMA_ALPHA, HEAVE_LPF_HZ, SUSP_LPF_HZ, TC_HAPTIC_SCALE, TELEM_SAMPLE_HZ,
+    self, EWMA_ALPHA, HEAVE_LPF_HZ, SUSP_LPF_HZ, TC_HAPTIC_SCALE,
 };
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,6 +23,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 pub const F123_PORT: u16 = 20777;
+const F123_SAMPLE_HZ: f32 = 120.0; // user-configurable in F1 settings – match it
 
 const STALE_AFTER: Duration = Duration::from_millis(1500);
 const PACKET_FORMAT_F123: u16 = 2023;
@@ -202,10 +203,10 @@ fn apply_packet(s: &mut AppState, car: &[u8], mot: &[u8]) {
     // Suspension positions: f32[4] at global offset 29, RL-RR-FL-FR
     if mot.len() >= 45 {
         let raw_susp = [f32_at(mot, 29), f32_at(mot, 33), f32_at(mot, 37), f32_at(mot, 41)];
-        s.t_filt_susp_rl = signal::low_pass(raw_susp[0], s.t_filt_susp_rl, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
-        s.t_filt_susp_rr = signal::low_pass(raw_susp[1], s.t_filt_susp_rr, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
-        s.t_filt_susp_fl = signal::low_pass(raw_susp[2], s.t_filt_susp_fl, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
-        s.t_filt_susp_fr = signal::low_pass(raw_susp[3], s.t_filt_susp_fr, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
+        s.t_filt_susp_rl = signal::low_pass(raw_susp[0], s.t_filt_susp_rl, SUSP_LPF_HZ, F123_SAMPLE_HZ);
+        s.t_filt_susp_rr = signal::low_pass(raw_susp[1], s.t_filt_susp_rr, SUSP_LPF_HZ, F123_SAMPLE_HZ);
+        s.t_filt_susp_fl = signal::low_pass(raw_susp[2], s.t_filt_susp_fl, SUSP_LPF_HZ, F123_SAMPLE_HZ);
+        s.t_filt_susp_fr = signal::low_pass(raw_susp[3], s.t_filt_susp_fr, SUSP_LPF_HZ, F123_SAMPLE_HZ);
         s.t_susp_rl = s.t_filt_susp_rl;
         s.t_susp_rr = s.t_filt_susp_rr;
         s.t_susp_fl = s.t_filt_susp_fl;
@@ -250,7 +251,7 @@ fn apply_packet(s: &mut AppState, car: &[u8], mot: &[u8]) {
     // Heave: m_localVelocityY at global offset 165 — longitudinal accel
     if mot.len() >= 173 {
         let vel_y = f32_at(mot, 165); // vertical velocity (heave proxy)
-        s.t_filt_heave = signal::low_pass(vel_y, s.t_filt_heave, HEAVE_LPF_HZ, TELEM_SAMPLE_HZ);
+        s.t_filt_heave = signal::low_pass(vel_y, s.t_filt_heave, HEAVE_LPF_HZ, F123_SAMPLE_HZ);
         s.t_heave = s.t_filt_heave;
         s.t_grip_mult = signal::grip_multiplier(s.t_heave);
     }

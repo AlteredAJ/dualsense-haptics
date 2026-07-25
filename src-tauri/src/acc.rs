@@ -15,7 +15,7 @@
 
 use crate::hid::AppState;
 use crate::signal::{
-    self, EWMA_ALPHA, HEAVE_LPF_HZ, SUSP_LPF_HZ, TC_HAPTIC_SCALE, TELEM_SAMPLE_HZ,
+    self, EWMA_ALPHA, HEAVE_LPF_HZ, SUSP_LPF_HZ, TC_HAPTIC_SCALE,
 };
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +24,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 pub const AC_PORT: u16 = 9996;
+const AC_SAMPLE_HZ: f32 = 333.0; // AC broadcasts at physics tick rate
 const STALE_AFTER: Duration = Duration::from_millis(1500);
 
 // Handshake constants — client sends these to initiate the stream.
@@ -182,10 +183,10 @@ fn apply_packet(s: &mut AppState, b: &[u8], _len: usize) {
     // These are absolute displacement values, not normalized.
     // Use relative deltas for bump detection.
     let raw_susp = [f32_at(b, 292), f32_at(b, 296), f32_at(b, 300), f32_at(b, 304)];
-    let sfl = signal::low_pass(raw_susp[0], s.t_filt_susp_fl, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
-    let sfr = signal::low_pass(raw_susp[1], s.t_filt_susp_fr, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
-    let srl = signal::low_pass(raw_susp[2], s.t_filt_susp_rl, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
-    let srr = signal::low_pass(raw_susp[3], s.t_filt_susp_rr, SUSP_LPF_HZ, TELEM_SAMPLE_HZ);
+    let sfl = signal::low_pass(raw_susp[0], s.t_filt_susp_fl, SUSP_LPF_HZ, AC_SAMPLE_HZ);
+    let sfr = signal::low_pass(raw_susp[1], s.t_filt_susp_fr, SUSP_LPF_HZ, AC_SAMPLE_HZ);
+    let srl = signal::low_pass(raw_susp[2], s.t_filt_susp_rl, SUSP_LPF_HZ, AC_SAMPLE_HZ);
+    let srr = signal::low_pass(raw_susp[3], s.t_filt_susp_rr, SUSP_LPF_HZ, AC_SAMPLE_HZ);
     s.t_filt_susp_fl = sfl;
     s.t_filt_susp_fr = sfr;
     s.t_filt_susp_rl = srl;
@@ -201,7 +202,7 @@ fn apply_packet(s: &mut AppState, b: &[u8], _len: usize) {
 
     // Heave: accG_vertical at offset 28 (G-forces)
     let heave_raw = f32_at(b, 28);
-    s.t_filt_heave = signal::low_pass(heave_raw, s.t_filt_heave, HEAVE_LPF_HZ, TELEM_SAMPLE_HZ);
+    s.t_filt_heave = signal::low_pass(heave_raw, s.t_filt_heave, HEAVE_LPF_HZ, AC_SAMPLE_HZ);
     s.t_heave = s.t_filt_heave;
     s.t_grip_mult = signal::grip_multiplier(s.t_heave);
 
