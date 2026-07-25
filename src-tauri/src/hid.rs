@@ -1663,28 +1663,35 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                     GameSource::F123 | GameSource::Assetto => 0.12,
                     _ => 0.20,
                 };
+                // Global telemetry rumble gain — F1/AC cars produce subtler
+                // chassis vibrations, so boost the rumble to match the intensity
+                // of the triggers.
+                let telem_gain: f32 = match s.game_source {
+                    GameSource::F123 | GameSource::Assetto => 1.4,
+                    _ => 1.0,
+                };
                 // Wheelspin — rear tires slipping under power → strong high-freq grain.
                 // Pacejka-shaped intensity so micro-slips stay subtle, deep slips punch.
                 if s.t_slip_rear > rumble_thresh && s.r2_raw > DEAD_ZONE {
                     let pacejka = signal::pacejka_haptic(s.t_slip_rear);
                     let spin = ((s.t_slip_rear - rumble_thresh) / (1.0 - rumble_thresh)).clamp(0.0, 1.0) * rear_load * pacejka;
-                    rr = rr.max((spin * 240.0) as u8);
-                    rl = rl.max((spin * 120.0) as u8);
+                    rr = rr.max((spin * 240.0 * telem_gain) as u8);
+                    rl = rl.max((spin * 120.0 * telem_gain) as u8);
                 }
                 // Lockup — front tires sliding under braking → heavy coarse judder.
                 if s.t_slip_front > rumble_thresh && s.l2_raw > DEAD_ZONE {
                     let pacejka = signal::pacejka_haptic(s.t_slip_front);
                     let lock = ((s.t_slip_front - rumble_thresh) / (1.0 - rumble_thresh)).clamp(0.0, 1.0) * front_load * pacejka;
-                    rl = rl.max((lock * 220.0) as u8);
-                    rr = rr.max((lock * 160.0) as u8);
+                    rl = rl.max((lock * 220.0 * telem_gain) as u8);
+                    rr = rr.max((lock * 160.0 * telem_gain) as u8);
                 }
                 // Cornering scrub — combined slip + lateral angle → tire-howl grain.
                 if s.t_slip_combined > 0.25 || s.t_slip_angle > 0.08 {
                     let scrub_slip = ((s.t_slip_combined - 0.25) / 0.75).clamp(0.0, 1.0);
                     let scrub_ang  = ((s.t_slip_angle - 0.08) / 0.20).clamp(0.0, 1.0);
                     let scrub = scrub_slip.max(scrub_ang) * corner_load;
-                    rr = rr.max((scrub * 180.0) as u8);
-                    rl = rl.max((scrub * 90.0) as u8);
+                    rr = rr.max((scrub * 180.0 * telem_gain) as u8);
+                    rl = rl.max((scrub * 90.0 * telem_gain) as u8);
                 }
                 // Stereophonic road surface texture — left/right voice coils from per-wheel rumble.
                 if surface_scale > 0.0 {
@@ -1693,11 +1700,11 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                     if left_surf > 0.05 || right_surf > 0.05 {
                         let wave_l = (s.road_phase * std::f32::consts::TAU * 1.3).sin().abs();
                         let wave_r = (s.road_phase * std::f32::consts::TAU * 1.7).sin().abs();
-                        rl = rl.max((left_surf * SURFACE_STEREO_SCALE * wave_l * 140.0) as u8);
-                        rr = rr.max((right_surf * SURFACE_STEREO_SCALE * wave_r * 140.0) as u8);
+                        rl = rl.max((left_surf * SURFACE_STEREO_SCALE * wave_l * 140.0 * telem_gain) as u8);
+                        rr = rr.max((right_surf * SURFACE_STEREO_SCALE * wave_r * 140.0 * telem_gain) as u8);
                     } else if s.t_surface > 0.05 {
-                        rl = rl.max((s.t_surface * surface_scale * 140.0) as u8);
-                        rr = rr.max((s.t_surface * surface_scale * 120.0) as u8);
+                        rl = rl.max((s.t_surface * surface_scale * 140.0 * telem_gain) as u8);
+                        rr = rr.max((s.t_surface * surface_scale * 120.0 * telem_gain) as u8);
                     }
                 }
                 // Kerb strike — sharp hard rattle when a wheel hits a rumble strip.
