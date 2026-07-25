@@ -2288,20 +2288,33 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                 } else if armed
                     && s.edition == Edition::Full
                     && s.t_on
-                    && s.t_slip_rear > 0.20
-                    && s.t_slip_rear_frames >= dp.slip_deadzone_frames
                 {
+                    // Per-game slip sensitivity: F1 and AC cars have higher grip,
+                    // so slip ratios are naturally lower. Tighten the threshold and
+                    // boost the amplitude so the pedal communicates the limit.
+                    let (slip_thresh, slip_span, amp_floor) = match s.game_source {
+                        GameSource::F123 | GameSource::Assetto =>
+                            (0.12_f32, 0.48_f32, 160.0_f32),
+                        _ =>
+                            (0.20_f32, 0.80_f32, 120.0_f32),
+                    };
+                    if s.t_slip_rear > slip_thresh
+                        && s.t_slip_rear_frames >= dp.slip_deadzone_frames
+                    {
                     // Telemetry wheelspin pedal: Pacejka-shaped amp + frequency crossover
                     // to deep judder when slip ratio exceeds 1.0 (hybrid / AWD spin).
                     // Normal slip: light informative flutter (50-80 Hz). Deep slip:
                     // heavy low-freq thud (35 Hz) that the trigger motor can track
                     // smoothly instead of chattering from eTC square-wave spikes.
-                    let slip = ((s.t_slip_rear - 0.20) / 0.80).clamp(0.0, 1.0);
+                    let slip = ((s.t_slip_rear - slip_thresh) / slip_span).clamp(0.0, 1.0);
                     let pacejka = signal::pacejka_haptic(s.t_slip_rear);
                     let base_hz = dp.slip_flutter_lo_hz + slip * (dp.slip_flutter_hi_hz - dp.slip_flutter_lo_hz);
                     let freq = signal::slip_crossover_freq(s.t_slip_rear, base_hz, dp.slip_crossover_deep_hz) as u8;
-                    let amp  = ((120.0 + slip * 135.0) * pacejka).min(255.0) as u8;
+                    let amp  = ((amp_floor + slip * (255.0 - amp_floor)) * pacejka).min(255.0) as u8;
                     (0x06u8, freq, amp)
+                    } else {
+                        (if armed { 0x01u8 } else { 0x05u8 }, 0u8, rp1)
+                    }
                 } else if s.edition == Edition::Full
                     && s.t_on
                     && s.r2_raw <= DEAD_ZONE
