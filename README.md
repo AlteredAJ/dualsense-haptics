@@ -2,7 +2,8 @@
   <a href="https://github.com/AlteredAJ/dualsense-haptics/releases"><img src="https://img.shields.io/github/v/release/AlteredAJ/dualsense-haptics?color=4fc3ff&style=for-the-badge" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="license"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="platform">
-  <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics"><img src="https://img.shields.io/badge/upgrade-%244%20Full%20Immersion-ff90e8?style=for-the-badge&logo=playstation&logoColor=white" alt="upgrade"></a>
+  <a href="https://buymeacoffee.com/alt3red"><img src="https://img.shields.io/badge/☕_Buy_Me_a_Coffee-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="bmc"></a>
+  <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics"><img src="https://img.shields.io/badge/upgrade-%244%20Full_Immersion-ff90e8?style=for-the-badge&logo=playstation&logoColor=white" alt="upgrade"></a>
 </p>
 
 <br>

@@ -2,6 +2,7 @@
   <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics"><img src="https://img.shields.io/badge/release-v0.4.0-4fc3ff?style=for-the-badge&logo=playstation&logoColor=white" alt="release"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="platform">
   <img src="https://img.shields.io/badge/engine-Rust_%2B_Tauri_2-dea584?style=for-the-badge&logo=rust&logoColor=white" alt="rust">
+  <a href="https://buymeacoffee.com/alt3red"><img src="https://img.shields.io/badge/☕_Buy_Me_a_Coffee-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="bmc"></a>
   <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics"><img src="https://img.shields.io/badge/lifetime_license-%244-ff90e8?style=for-the-badge" alt="price"></a>
 </p>
 
