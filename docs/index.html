@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Universal DualSense Haptics — Your controller, fully alive on PC</title>
+<meta name="description" content="Adaptive triggers that push back. Voice-coil rumble that hits. A lightbar that responds. Real telemetry-driven haptics for Forza, F1, Assetto Corsa, and more. Windows 10/11. No PS5 required.">
+<meta name="theme-color" content="#090b10">
+<link rel="icon" type="image/png" sizes="128x128" href="https://raw.githubusercontent.com/AlteredAJ/dualsense-haptics/release-free/src-tauri/icons/128x128.png">
+<style>
+  @font-face {
+    font-family: 'Manrope';
+    src: url('https://raw.githubusercontent.com/AlteredAJ/dualsense-haptics/release-free/src/assets/Manrope-Variable.ttf') format('truetype');
+    font-weight: 200 800;
+    font-display: swap;
+  }
+
+  :root {
+    --bg: #090b10;
+    --bg-2: #0d1017;
+    --surface: rgba(255,255,255,0.045);
+    --surface-2: rgba(255,255,255,0.075);
+    --border: rgba(255,255,255,0.10);
+    --text: #f4f6fb;
+    --muted: #9aa3b4;
+    --accent: #4fc3ff;
+    --accent-2: #b18aff;
+    --accent-3: #ff6a4d;
+    --accent-4: #ffa552;
+    --accent-5: #4fa8ff;
+    --accent-6: #6fe04a;
+    --radius: 16px;
+    --radius-sm: 10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    scroll-behavior: smooth;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+    font-weight: 400;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(79,195,255,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 20% 80%, rgba(177,138,255,0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 80%, rgba(255,106,77,0.05) 0%, transparent 60%),
+      var(--bg);
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(9,11,16,0.75);
+    backdrop-filter: blur(26px) saturate(175%);
+    -webkit-backdrop-filter: blur(26px) saturate(175%);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .container {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  .nav-logo {
+    display: flex; align-items: center; gap: 12px;
+    font-weight: 800; font-size: 15px; letter-spacing: -0.02em;
+    color: var(--text); text-decoration: none;
+  }
+  .nav-logo img { height: 32px; width: 32px; }
+  .nav-cta {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 20px; border-radius: 999px;
+    background: var(--accent); color: #090b10;
+    font-weight: 700; font-size: 14px; text-decoration: none;
+    transition: box-shadow 0.25s;
+  }
+  .nav-cta:hover { box-shadow: 0 0 28px rgba(79,195,255,0.35); }
+
+  .hero {
+    padding: 160px 0 120px; text-align: center; position: relative;
+    overflow: hidden;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 16px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: var(--surface);
+    font-size: 13px; color: var(--muted); margin-bottom: 32px;
+  }
+  .hero-badge span { color: var(--accent); font-weight: 700; }
+  .hero h1 {
+    font-size: clamp(44px, 7vw, 76px); font-weight: 800;
+    line-height: 1.08; letter-spacing: -0.03em; margin-bottom: 24px;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p.sub {
+    font-size: 18px; color: var(--muted); max-width: 620px;
+    margin: 0 auto 48px; line-height: 1.7;
+  }
+  .hero-actions {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px; flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 32px; border-radius: 999px;
+    font-weight: 700; font-size: 15px; text-decoration: none;
+    transition: all 0.25s; border: none; cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--accent); color: #090b10;
+    box-shadow: 0 0 40px rgba(79,195,255,0.18);
+  }
+  .btn-primary:hover { box-shadow: 0 0 56px rgba(79,195,255,0.35); transform: translateY(-1px); }
+  .btn-secondary {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.10); }
+  .controller-svg {
+    margin-top: 72px; max-width: 680px; width: 90%;
+    height: auto; opacity: 0.92;
+    filter: drop-shadow(0 0 60px rgba(79,195,255,0.10));
+  }
+  .hero-glow {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 800px; height: 500px;
+    background: radial-gradient(circle, rgba(79,195,255,0.08) 0%, transparent 70%);
+    pointer-events: none; z-index: -1;
+  }
+
+  section { padding: 100px 0; }
+  .section-label {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--accent); margin-bottom: 16px;
+  }
+  .section-heading {
+    font-size: clamp(28px, 5vw, 48px); font-weight: 800;
+    line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 20px;
+  }
+  .section-sub {
+    font-size: 17px; color: var(--muted); max-width: 640px;
+    line-height: 1.7;
+  }
+
+  .contrast-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .contrast-row {
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  .contrast-cell {
+    padding: 20px 28px; font-size: 15px;
+  }
+  .contrast-cell.dim { background: var(--surface); color: var(--muted); }
+  .contrast-cell.bright { font-weight: 600; }
+  .contrast-header {
+    padding: 14px 28px; font-weight: 800; font-size: 14px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .contrast-header.dim { background: rgba(255,255,255,0.03); }
+  .contrast-header.bright { background: rgba(79,195,255,0.06); color: var(--accent); }
+
+  .profiles-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 20px; margin-top: 48px;
+  }
+  .profile-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px; position: relative; overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .profile-card:hover { border-color: rgba(255,255,255,0.18); }
+  .profile-card::before {
+    content: ''; position: absolute; top: -60px; right: -60px;
+    width: 200px; height: 200px; border-radius: 50%; opacity: 0.07;
+    pointer-events: none;
+  }
+  .profile-card.racing::before { background: var(--accent); }
+  .profile-card.gun::before { background: var(--accent-3); }
+  .profile-card.melee::before { background: var(--accent-4); }
+  .profile-card.audio::before { background: var(--accent-5); }
+  .profile-card.static::before { background: var(--accent-2); }
+  .profile-card.minecraft::before { background: var(--accent-6); }
+  .profile-icon {
+    width: 44px; height: 44px; border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 800; margin-bottom: 18px;
+  }
+  .racing .profile-icon { background: rgba(79,195,255,0.12); color: var(--accent); }
+  .gun .profile-icon { background: rgba(255,106,77,0.12); color: var(--accent-3); }
+  .melee .profile-icon { background: rgba(255,165,82,0.12); color: var(--accent-4); }
+  .audio .profile-icon { background: rgba(79,168,255,0.12); color: var(--accent-5); }
+  .static .profile-icon { background: rgba(177,138,255,0.12); color: var(--accent-2); }
+  .minecraft .profile-icon { background: rgba(111,224,74,0.12); color: var(--accent-6); }
+  .profile-card h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.01em; }
+  .profile-card p { font-size: 14px; color: var(--muted); line-height: 1.65; }
+  .profile-card p strong { color: var(--text); font-weight: 600; }
+  .profile-tag {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; margin-top: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .racing .profile-tag { background: rgba(79,195,255,0.06); color: var(--accent); }
+  .gun .profile-tag { background: rgba(255,106,77,0.06); color: var(--accent-3); }
+  .melee .profile-tag { background: rgba(255,165,82,0.06); color: var(--accent-4); }
+  .audio .profile-tag { background: rgba(79,168,255,0.06); color: var(--accent-5); }
+  .static .profile-tag { background: rgba(177,138,255,0.06); color: var(--accent-2); }
+  .minecraft .profile-tag { background: rgba(111,224,74,0.06); color: var(--accent-6); }
+
+  .tiers-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px; margin-top: 48px;
+  }
+  .tier-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 36px; text-align: center;
+    transition: border-color 0.3s;
+  }
+  .tier-card.pro {
+    border-color: rgba(79,195,255,0.25);
+    box-shadow: 0 0 40px rgba(79,195,255,0.06);
+  }
+  .tier-badge {
+    display: inline-block; padding: 4px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; margin-bottom: 16px;
+    background: rgba(79,195,255,0.08); color: var(--accent);
+  }
+  .tier-price {
+    font-size: 48px; font-weight: 800; letter-spacing: -0.03em;
+    margin-bottom: 4px;
+  }
+  .tier-price span { font-size: 18px; color: var(--muted); font-weight: 500; }
+  .tier-desc { font-size: 14px; color: var(--muted); margin-bottom: 28px; }
+  .tier-features { text-align: left; list-style: none; margin-bottom: 28px; }
+  .tier-features li {
+    padding: 8px 0; font-size: 14px; display: flex; align-items: center; gap: 10px;
+  }
+  .tier-features li::before {
+    content: '✓'; color: var(--accent); font-weight: 800; font-size: 14px;
+    width: 18px; text-align: center; flex-shrink: 0;
+  }
+  .tier-features li.na { opacity: 0.35; }
+  .tier-features li.na::before { color: rgba(255,255,255,0.15); }
+  .tier-cta {
+    display: block; padding: 14px 0; border-radius: 999px;
+    font-weight: 700; font-size: 15px; text-decoration: none;
+    transition: all 0.25s;
+  }
+  .tier-cta.primary { background: var(--accent); color: #090b10; }
+  .tier-cta.primary:hover { box-shadow: 0 0 32px rgba(79,195,255,0.30); }
+  .tier-cta.secondary {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .tier-cta.secondary:hover { background: rgba(255,255,255,0.10); }
+
+  .steps {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 24px; margin-top: 48px;
+  }
+  .step {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px; text-align: center;
+  }
+  .step-num {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(79,195,255,0.10);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800;
+    margin: 0 auto 20px;
+  }
+  .step h4 { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
+  .step p { font-size: 13px; color: var(--muted); }
+
+  .reqs { margin-top: 48px; }
+  .req-row {
+    display: grid; grid-template-columns: 200px 1fr;
+    padding: 14px 0; border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .req-row:last-child { border-bottom: none; }
+  .req-label { font-weight: 700; color: var(--muted); }
+  .req-value a { color: var(--accent); text-decoration: none; }
+  .req-value a:hover { text-decoration: underline; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 48px 0;
+    margin-top: 40px;
+  }
+  footer .container {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+  }
+  footer p { font-size: 13px; color: var(--muted); }
+  .footer-links { display: flex; gap: 24px; }
+  .footer-links a {
+    font-size: 13px; color: var(--muted); text-decoration: none;
+    transition: color 0.2s;
+  }
+  .footer-links a:hover { color: var(--text); }
+
+  @media (max-width: 768px) {
+    .hero { padding: 120px 0 80px; }
+    .hero h1 { font-size: 36px; }
+    section { padding: 64px 0; }
+    .section-heading { font-size: 28px; }
+    .profiles-grid { grid-template-columns: 1fr; }
+    .tiers-grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .contrast-row { grid-template-columns: 1fr; }
+    .req-row { grid-template-columns: 1fr; gap: 4px; }
+    footer .container { flex-direction: column; text-align: center; }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in { animation: fadeUp 0.7s ease-out both; }
+  .delay-1 { animation-delay: 0.1s; }
+  .delay-2 { animation-delay: 0.2s; }
+  .delay-3 { animation-delay: 0.3s; }
+  .delay-4 { animation-delay: 0.4s; }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-in { animation: none; opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <a href="/dualsense-haptics/" class="nav-logo">
+      <img src="https://raw.githubusercontent.com/AlteredAJ/dualsense-haptics/release-free/src-tauri/icons/128x128.png" alt="icon" width="32" height="32">
+      Universal DualSense Haptics
+    </a>
+    <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics" class="nav-cta">Buy on Gumroad &rarr;</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="container">
+    <div class="hero-badge animate-in"><span>v0.4.0</span> &mdash; Windows 10/11</div>
+    <h1 class="animate-in delay-1">Your DualSense.<br><em>Fully alive</em> on PC.</h1>
+    <p class="sub animate-in delay-2">
+      Adaptive triggers that push back. Voice-coil rumble that hits. A lightbar that responds.
+      Real telemetry-driven haptics for Forza, F1, Assetto Corsa, and more. No PS5 required.
+    </p>
+    <div class="hero-actions animate-in delay-3">
+      <a href="https://github.com/AlteredAJ/dualsense-haptics/releases" class="btn btn-secondary">Download Free</a>
+      <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics" class="btn btn-primary">Get Full Immersion &mdash; $4</a>
+    </div>
+    <svg class="controller-svg animate-in delay-4" viewBox="0 0 1117 892" xmlns="http://www.w3.org/2000/svg" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5">
+      <path d="M917.682,411.683l32.795,32.795m-0,-32.795l-32.795,32.795" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <rect x="847.313" y="341.648" width="32.865" height="32.865" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M934.079,271.403l20.206,33.355l-40.411,-0l20.205,-33.355Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <circle cx="1004.08" cy="358.08" r="19.1" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M866.471,116.785l114.214,0c12.312,0 -1.248,-110.916 -78.919,-110.916c-37.32,-0 -51.81,110.916 -35.295,110.916Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M252.212,116.785l-114.214,0c-12.312,0 1.248,-110.916 78.919,-110.916c37.32,-0 51.81,110.916 35.295,110.916Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <g>
+        <path d="M213.487,271.996c0,-11.214 -9.091,-20.305 -20.305,-20.305l-28.888,-0c-11.215,-0 -20.306,9.091 -20.306,20.305l0,24.336c0,6.286 2.397,12.335 6.703,16.915c6.856,7.293 17.331,18.436 23.351,24.838c1.218,1.296 2.917,2.031 4.696,2.031c1.778,-0 3.478,-0.735 4.696,-2.031c6.019,-6.402 16.494,-17.545 23.35,-24.838c4.306,-4.58 6.703,-10.629 6.703,-16.915c0,-6.766 0,-16.013 0,-24.336Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      </g>
+      <g>
+        <path d="M213.487,443.093c0,11.215 -9.091,20.306 -20.305,20.306l-28.888,-0c-11.215,-0 -20.306,-9.091 -20.306,-20.306l0,-24.125c0,-6.412 2.494,-12.572 6.953,-17.178c6.884,-7.11 17.23,-17.796 23.166,-23.927c1.214,-1.254 2.885,-1.962 4.631,-1.962c1.745,0 3.416,0.708 4.63,1.962c5.936,6.131 16.282,16.817 23.166,23.927c4.46,4.606 6.953,10.766 6.953,17.178c0,6.746 0,15.888 0,24.125Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      </g>
+      <g>
+        <path d="M263.75,322.259c11.215,0 20.306,9.091 20.306,20.306l-0,28.888c-0,11.214 -9.091,20.305 -20.306,20.305l-24.349,0c-6.278,0 -12.32,-2.391 -16.899,-6.687c-7.081,-6.644 -17.749,-16.654 -23.907,-22.433c-1.274,-1.195 -2.008,-2.855 -2.035,-4.601c-0.027,-1.746 0.656,-3.428 1.892,-4.661c6.106,-6.094 16.81,-16.778 23.946,-23.901c4.63,-4.621 10.905,-7.216 17.446,-7.216c6.724,0 15.758,0 23.906,0Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      </g>
+      <g>
+        <path d="M93.725,322.259c-11.214,0 -20.306,9.091 -20.306,20.306l0,28.888c0,11.214 9.092,20.305 20.306,20.305l24.349,0c6.278,0 12.321,-2.391 16.899,-6.687c7.081,-6.644 17.749,-16.654 23.908,-22.433c1.273,-1.195 2.007,-2.855 2.034,-4.601c0.027,-1.746 -0.656,-3.428 -1.891,-4.661c-6.106,-6.094 -16.81,-16.778 -23.947,-23.901c-4.63,-4.621 -10.904,-7.216 -17.446,-7.216c-6.724,0 -15.757,0 -23.906,0Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      </g>
+      <circle cx="934.079" cy="428.08" r="34.957" style="fill:rgba(255,255,255,0.03);stroke:rgba(255,115,134,0.3);stroke-width:4px"/>
+      <circle cx="864.079" cy="358.08" r="34.957" style="fill:rgba(255,255,255,0.03);stroke:rgba(199,155,224,0.3);stroke-width:4px"/>
+      <circle cx="1004.08" cy="358.08" r="34.957" style="fill:rgba(255,255,255,0.03);stroke:rgba(255,115,134,0.3);stroke-width:4px"/>
+      <circle cx="934.079" cy="288.08" r="34.957" style="fill:rgba(255,255,255,0.03);stroke:rgba(95,217,138,0.3);stroke-width:4px"/>
+      <path d="M100.97,881.749c8.551,1.607 62.356,4.094 68.38,-3.153c33.93,-40.827 69.521,-154.237 85.416,-196.14c9.791,-25.813 35.4,-37.881 67.491,-40.687c30.597,13.569 45.149,13.982 96.708,3.594l280.228,-0c51.559,10.388 66.111,9.975 96.708,-3.594c32.091,2.806 57.701,14.874 67.492,40.687c15.894,41.903 51.486,155.313 85.416,196.14c6.023,7.247 59.828,4.76 68.38,3.153" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M282.527,168.559c13.841,1.794 27.682,-1.16 41.522,-6.511" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M590.061,591.266c-0,-3.699 -2.999,-6.698 -6.698,-6.698c-11.914,0 -36.653,0 -48.567,0c-3.7,0 -6.698,2.999 -6.698,6.698c-0,0.001 -0,0.001 -0,0.002c-0,3.699 2.998,6.698 6.698,6.698c11.914,-0 36.653,-0 48.567,-0c3.699,-0 6.698,-2.999 6.698,-6.698c-0,-0.001 -0,-0.001 -0,-0.002Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M835.33,168.559c-13.84,1.794 -27.681,-1.16 -41.522,-6.511" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M820.718,193.129c5.479,-25.983 25.744,-37.755 62.283,-33.901c40.742,4.297 79.814,11.918 115.424,22.309c11.905,3.474 23.486,8.273 28.39,18.67c91.01,192.963 106.846,408.796 55.912,643.084c-2.947,13.555 -9.046,24.221 -21.05,32.104c-5.842,3.836 -12.586,7.06 -21.885,9.445c-21.563,5.529 -31.041,-9.866 -33.637,-23.758c-33.415,-178.821 -88.678,-342.348 -191.662,-450.233c-9.318,-9.761 -18.181,-31.681 -20.635,-51.733c-0.97,-7.926 -0.451,-15.333 0.462,-22.036c6.052,-44.414 16.477,-96.901 26.398,-143.951Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M296.668,193.129c-5.479,-25.983 -25.743,-37.755 -62.282,-33.901c-40.742,4.297 -79.814,11.918 -115.424,22.309c-11.905,3.474 -23.487,8.273 -28.39,18.67c-91.01,192.963 -106.846,408.796 -55.913,643.084c2.947,13.555 9.046,24.221 21.05,32.104c5.843,3.836 12.587,7.06 21.886,9.445c21.562,5.529 31.041,-9.866 33.636,-23.758c33.416,-178.821 88.679,-342.348 191.663,-450.233c9.318,-9.761 18.181,-31.681 20.635,-51.733c0.969,-7.926 0.451,-15.333 -0.463,-22.036c-6.051,-44.414 -16.477,-96.901 -26.398,-143.951Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M559.079,143.015c0,0 158.534,-0.805 226.555,15.497c12.437,2.981 21.237,14.507 19.467,24.644c-8.942,51.221 -20.354,109.033 -30.53,160.023c-8.029,40.224 -40.893,53.816 -68.431,53.692c-27.538,-0.124 -147.061,-0.559 -147.061,-0.559c0,0 -119.522,0.435 -147.06,0.559c-27.538,0.124 -60.403,-13.468 -68.431,-53.692c-10.177,-50.99 -21.589,-108.802 -30.531,-160.023c-1.77,-10.137 7.031,-21.663 19.467,-24.644c68.021,-16.302 226.555,-15.497 226.555,-15.497Z" style="fill:rgba(255,255,255,0.03);stroke:rgba(79,195,255,0.25);stroke-width:4px"/>
+      <circle cx="389.484" cy="206.091" r="19.473" style="fill:rgba(255,255,255,0.04)"/>
+      <circle cx="428.43" cy="206.091" r="19.473" style="fill:rgba(255,255,255,0.04)"/>
+      <path d="M995.675,180.421c-0.736,-29.244 -151.654,-71.59 -148.099,-18.465c9.518,-3.397 21.562,-4.367 36.227,-2.82c39.392,4.154 77.223,11.417 111.872,21.285Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M122.514,180.513c0.736,-29.244 151.654,-71.59 148.099,-18.465c-9.518,-3.397 -21.562,-4.367 -36.227,-2.82c-39.392,4.154 -77.223,11.417 -111.872,21.285Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M839.082,206.321l-6.369,31.916c-0,-0 -2.557,11.875 11.724,14.725c14.281,2.849 16.478,-9.098 16.478,-9.098l6.4,-32.075c0,-0 2.559,-11.876 -11.74,-14.645c-14.298,-2.77 -16.493,9.177 -16.493,9.177Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <path d="M281.064,206.321l6.369,31.916c-0,-0 2.557,11.875 -11.724,14.725c-14.281,2.849 -16.478,-9.098 -16.478,-9.098l-6.4,-32.075c-0,-0 -2.559,-11.876 11.739,-14.645c14.299,-2.77 16.494,9.177 16.494,9.177Z" style="fill:none;stroke:rgba(255,255,255,0.18);stroke-width:4px"/>
+      <g>
+        <path d="M262.694,188.058l-4.528,-7.079l4.528,7.079Z" style="fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4px"/>
+        <path d="M269.717,185.341l-0,-8.725l-0,8.725Z" style="fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4px"/>
+        <path d="M275.535,188.058l5.186,-7.079" style="fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4px"/>
+      </g>
+      <g>
+        <path d="M856.893,174.616l-13.987,0l13.987,0Z" style="fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4px"/>
+        <path d="M856.893,180.337l-13.987,0l13.987,0Z" style="fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4px"/>
+        <path d="M856.893,186.058l-13.987,-0" style="fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4px"/>
+      </g>
+      <circle cx="763.456" cy="528.548" r="87.347" style="fill:none;stroke:rgba(255,255,255,0.12);stroke-width:4px"/>
+      <circle cx="763.456" cy="528.548" r="57.193" style="fill:rgba(79,195,255,0.04);stroke:rgba(79,195,255,0.2);stroke-width:4px"/>
+      <circle cx="351.764" cy="528.548" r="87.347" style="fill:none;stroke:rgba(255,255,255,0.12);stroke-width:4px"/>
+      <circle cx="351.764" cy="528.548" r="57.193" style="fill:rgba(79,195,255,0.04);stroke:rgba(79,195,255,0.2);stroke-width:4px"/>
+      <path d="M525.1,538.049c-6.333,-1.817 -7.382,-5.56 -4.509,-7.734c2.071,-1.361 4.45,-2.545 6.969,-3.436l0.232,-0.072l18.72,-6.713l-0,7.71l-13.419,4.906c-2.351,0.905 -2.751,2.108 -0.798,2.754c0.974,0.248 2.089,0.392 3.239,0.392c1.641,-0 3.212,-0.291 4.666,-0.822l-0.094,0.029l6.462,-2.353l-0,6.915c-0.4,0.099 -0.854,0.147 -1.299,0.243c-2.068,0.363 -4.448,0.571 -6.875,0.571c-4.744,0 -9.3,-0.795 -13.547,-2.257l0.293,0.088l-0.04,-0.221Zm39.449,0.789l20.99,-7.584c2.383,-0.859 2.753,-2.084 0.819,-2.727c-0.968,-0.237 -2.078,-0.373 -3.222,-0.373c-1.66,-0 -3.255,0.288 -4.733,0.813l0.099,-0.029l-14.02,5l0,-7.958l0.801,-0.283c2.801,-0.931 6.093,-1.654 9.489,-2.03l0.221,-0.022c1.249,-0.133 2.695,-0.208 4.16,-0.208c5.007,0 9.809,0.883 14.254,2.505l-0.288,-0.093c6.16,2.003 6.8,4.906 5.252,6.907c-1.491,1.486 -3.294,2.662 -5.303,3.42l-0.104,0.035l-28.484,10.359l-0,-7.654l0.069,-0.078Zm-15.521,-54.146l-0,58.498l13.051,4.204l-0,-49.061c-0,-2.3 1.013,-3.836 2.646,-3.303c2.121,0.601 2.534,2.713 2.534,5.018l0,19.587c8.137,3.978 14.543,-0.008 14.543,-10.508c-0,-10.791 -3.754,-15.585 -14.796,-19.427c-4.762,-1.729 -10.778,-3.452 -16.933,-4.815l-1.037,-0.193l-0.008,0Z" style="fill:rgba(255,255,255,0.35)"/>
+    </svg>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-label">Without vs With</div>
+    <h2 class="section-heading">What changes when you plug in.</h2>
+    <p class="section-sub">Same controller. Completely different experience.</p>
+    <div class="contrast-card" style="margin-top:40px">
+      <div class="contrast-row">
+        <div class="contrast-header dim">Without Universal Haptics</div>
+        <div class="contrast-header bright">With Universal Haptics</div>
+      </div>
+      <div class="contrast-row">
+        <div class="contrast-cell dim">Triggers feel dead — no resistance</div>
+        <div class="contrast-cell bright">Adaptive triggers push back with real tension</div>
+      </div>
+      <div class="contrast-row">
+        <div class="contrast-cell dim">Rumble is generic on/off vibration</div>
+        <div class="contrast-cell bright">Voice-coil motors deliver per-profile envelopes</div>
+      </div>
+      <div class="contrast-row">
+        <div class="contrast-cell dim">Lightbar stays static blue</div>
+        <div class="contrast-cell bright">Lightbar reacts to game state in real-time</div>
+      </div>
+      <div class="contrast-row">
+        <div class="contrast-cell dim">No game-aware feedback</div>
+        <div class="contrast-cell bright">Forza telemetry, F1 data, MC item detection</div>
+      </div>
+      <div class="contrast-row">
+        <div class="contrast-cell dim">Controller is just a controller</div>
+        <div class="contrast-cell bright">Controller becomes a force-feedback instrument</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border)">
+  <div class="container">
+    <div class="section-label">Six Haptic Profiles</div>
+    <h2 class="section-heading">Pick your game. The controller follows.</h2>
+    <p class="section-sub">Each profile is a curated haptic instrument tuned for a specific experience. Switch profiles on the fly.</p>
+    <div class="profiles-grid">
+      <div class="profile-card racing">
+        <div class="profile-icon">R</div>
+        <h3>Racing</h3>
+        <p>Real telemetry from <strong>Forza Horizon, Forza Motorsport, F1 23, Assetto Corsa</strong>. Brake pedal firms with speed. Throttle stiffens at high RPM. Tire slip flutter. ABS pump. Gear-shift clunks. Rev-limiter bounce. Five drivetrain tuning profiles.</p>
+        <span class="profile-tag">Telemetry-driven</span>
+      </div>
+      <div class="profile-card gun">
+        <div class="profile-icon">G</div>
+        <h3>Gun</h3>
+        <p>Nine weapon profiles: <strong>Pistol, Revolver, Rifle, Burst, AR, SMG, LMG, Shotgun, Sniper</strong>. Semi-auto trigger break at 43% pull with recoil. Burst with configurable rate. Full-auto with adjustable fire rate.</p>
+        <span class="profile-tag">Trigger-based</span>
+      </div>
+      <div class="profile-card melee">
+        <div class="profile-icon">M</div>
+        <h3>Melee</h3>
+        <p>Ten weapon profiles. Resting swing heft builds resistance as you pull. Full release fires a <strong>connect-kick impact</strong> through trigger and both grip motors. Fists to sledgehammer.</p>
+        <span class="profile-tag">Swing-to-impact</span>
+      </div>
+      <div class="profile-card audio">
+        <div class="profile-icon">A</div>
+        <h3>Audio Reactive</h3>
+        <p>System audio drives the haptics. Two-band split: sub-bass (kicks) routes left, engine band (revs) routes right. <strong>TRUE haptics mode</strong> streams waveform into USB audio channels &mdash; the same path PS5 games use.</p>
+        <span class="profile-tag">USB audio</span>
+      </div>
+      <div class="profile-card static">
+        <div class="profile-icon">S</div>
+        <h3>Static</h3>
+        <p>Fixed trigger resistance and custom lightbar color. <strong>No game required.</strong> Great for setup testing, ambient lighting, or just feeling the triggers push back at a set level.</p>
+        <span class="profile-tag">Always-on</span>
+      </div>
+      <div class="profile-card minecraft">
+        <div class="profile-icon">MC</div>
+        <h3>Minecraft</h3>
+        <p>Fabric mod (included) connects over local TCP. <strong>Per-item haptics</strong>: sword swing, pickaxe grind, bow draw, shield brace, eating gulp, heartbeat, sprint footfalls. Lightbar changes per tool.</p>
+        <span class="profile-tag">Fabric mod</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-heading">Free vs Full Immersion.</h2>
+    <p class="section-sub">The free version gives you static triggers. Full Immersion unlocks all six profiles with real game telemetry.</p>
+    <div class="tiers-grid">
+      <div class="tier-card">
+        <div class="tier-price">Free</div>
+        <div class="tier-desc">Static adaptive triggers &mdash; on GitHub</div>
+        <ul class="tier-features">
+          <li>Static trigger resistance</li>
+          <li>USB + Bluetooth</li>
+          <li>Xbox virtual pad output</li>
+          <li>HidHide device cloaking</li>
+          <li>Frameless UI</li>
+          <li>MIT licensed &mdash; open source</li>
+          <li class="na">Racing telemetry haptics</li>
+          <li class="na">Gun / Melee / Audio profiles</li>
+          <li class="na">Minecraft per-item feels</li>
+        </ul>
+        <a href="https://github.com/AlteredAJ/dualsense-haptics/releases" class="tier-cta secondary">Download Free</a>
+      </div>
+      <div class="tier-card pro">
+        <div class="tier-badge">Recommended</div>
+        <div class="tier-price">$4<span> USD</span></div>
+        <div class="tier-desc">Full Immersion &mdash; all six profiles on Gumroad</div>
+        <ul class="tier-features">
+          <li>Everything in Free</li>
+          <li>Racing telemetry (Forza, F1, AC)</li>
+          <li>Gun recoil (9 weapon profiles)</li>
+          <li>Melee swing feedback</li>
+          <li>Audio reactive rumble</li>
+          <li>Minecraft per-item feels</li>
+          <li>The Lab &mdash; live preview + tuning</li>
+          <li>Lifetime license, one machine</li>
+        </ul>
+        <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics" class="tier-cta primary">Get Full Immersion &mdash; $4</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border)">
+  <div class="container">
+    <div class="section-label">Setup</div>
+    <h2 class="section-heading">Three steps to full immersion.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h4>Download the app</h4>
+        <p>Get the free static version from GitHub Releases or buy Full Immersion ($4) on Gumroad.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h4>Download &amp; enter key</h4>
+        <p>Portable .exe, no installer. Paste your key, it binds to your machine.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h4>Plug in &amp; play</h4>
+        <p>Connect DualSense via USB. Pick a profile. Launch your game.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-label">Requirements</div>
+    <h2 class="section-heading">What you need.</h2>
+    <div class="reqs">
+      <div class="req-row">
+        <span class="req-label">Operating System</span>
+        <span class="req-value">Windows 10 or 11 (x64)</span>
+      </div>
+      <div class="req-row">
+        <span class="req-label">Controller</span>
+        <span class="req-value">Sony DualSense (USB-C recommended; Bluetooth supported)</span>
+      </div>
+      <div class="req-row">
+        <span class="req-label">ViGEmBus</span>
+        <span class="req-value">Free. Required only for Xbox virtual pad output. <a href="https://github.com/nefarius/ViGEmBus">Download &rarr;</a></span>
+      </div>
+      <div class="req-row">
+        <span class="req-label">HidHide</span>
+        <span class="req-value">Free. Recommended for device cloaking. <a href="https://github.com/nefarius/HidHide">Download &rarr;</a></span>
+      </div>
+      <div class="req-row">
+        <span class="req-label">Minecraft</span>
+        <span class="req-value">Fabric Loader 1.20.1 + included mod</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>&copy; 2026 Universal DualSense Haptics.</p>
+    <div class="footer-links">
+      <a href="https://github.com/AlteredAJ/dualsense-haptics">GitHub</a>
+      <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics">Gumroad</a>
+      <a href="https://github.com/AlteredAJ/dualsense-haptics/blob/release-free/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/AlteredAJ/dualsense-haptics/blob/release-free/ROADMAP.md">Roadmap</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
