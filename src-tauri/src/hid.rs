@@ -1663,12 +1663,12 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                     GameSource::F123 | GameSource::Assetto => 0.12,
                     _ => 0.20,
                 };
-                // Global telemetry rumble gain — F1/AC cars produce subtler
-                // chassis vibrations, so boost the rumble to match the intensity
-                // of the triggers.
+                // Global telemetry rumble gain — sim-cade titles benefit from
+                // a moderate lift; hardcore sims get a bigger boost since their
+                // chassis vibrations are subtler.
                 let telem_gain: f32 = match s.game_source {
                     GameSource::F123 | GameSource::Assetto => 1.4,
-                    _ => 1.0,
+                    _ => 1.2,
                 };
                 // Wheelspin — rear tires slipping under power → strong high-freq grain.
                 // Pacejka-shaped intensity so micro-slips stay subtle, deep slips punch.
