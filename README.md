@@ -2,12 +2,13 @@
   <img src="https://img.shields.io/badge/version-0.4.0-blue" alt="version">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey" alt="platform">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
+  <img src="https://img.shields.io/github/stars/AlteredAJ/dualsense-haptics?style=social" alt="stars">
   <a href="https://alt3red.gumroad.com/l/universal-dualsense-haptics"><img src="https://img.shields.io/badge/upgrade-Full%20Immersion%20%244-ff90e8?style=flat" alt="upgrade"></a>
 </p>
 
 ---
 
-# 🎮 Universal DualSense Haptics
+# DualSense Haptics
 
 **Turn your PS5 DualSense into a PC haptic peripheral.** Static adaptive trigger resistance, native DualSense passthrough, and virtual Xbox 360 output — all without a PlayStation.
 
@@ -18,7 +19,7 @@
 
 ---
 
-## ✨ Features
+## Features
 
 - **Static trigger resistance** — L2 and R2 hold firm while pressed
 - **Native DualSense output** — games that support the controller read it directly
@@ -30,13 +31,13 @@
 
 ---
 
-## 📦 Download
+## Download
 
 Grab the latest `.exe` from [Releases](https://github.com/AlteredAJ/dualsense-haptics/releases).
 
 ---
 
-## 🔓 Free vs Full Immersion ($4)
+## Free vs Full Immersion ($4)
 
 This is the **free** version — static adaptive triggers, no telemetry. Want more?
 
@@ -53,7 +54,7 @@ This is the **free** version — static adaptive triggers, no telemetry. Want mo
 
 ---
 
-## 🔧 Requirements
+## Requirements
 
 | Component | Needed for |
 |-----------|-----------|
@@ -62,7 +63,7 @@ This is the **free** version — static adaptive triggers, no telemetry. Want mo
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 1. Install **ViGEmBus** if you want Xbox output
 2. Install **HidHide** if you want device cloaking (run as admin)
@@ -72,7 +73,7 @@ This is the **free** version — static adaptive triggers, no telemetry. Want mo
 
 ---
 
-## 🏗️ Build from Source
+## Build from Source
 
 ```powershell
 git clone https://github.com/AlteredAJ/dualsense-haptics.git
@@ -84,7 +85,7 @@ Requires [Rust](https://rustup.rs) + [WebView2](https://developer.microsoft.com/
 
 ---
 
-## 🧩 Tech Stack
+## Tech Stack
 
 | Layer | Tech |
 |-------|------|
@@ -96,12 +97,51 @@ Requires [Rust](https://rustup.rs) + [WebView2](https://developer.microsoft.com/
 
 ---
 
-## 📜 License
+## Project Structure
+
+```
+dualsense-haptics/
+├── src/                    # Frontend (vanilla JS + HTML + CSS)
+├── src-tauri/              # Rust backend
+│   └── src/
+│       ├── main.rs         # Entry point + Tauri setup
+│       ├── lib.rs          # Tauri commands
+│       ├── hid.rs           # DualSense HID parsing + input loop
+│       ├── xinput.rs        # Virtual Xbox 360 pad (ViGEmBus)
+│       ├── hidhide.rs       # HidHide device cloaking client
+│       └── settings.rs      # Persisted user settings
+├── docs/                   # Platform-specific guides
+└── icons/                  # App icons
+```
+
+---
+
+## Roadmap
+
+| Status | Item |
+|--------|------|
+| ✅ | Static trigger resistance |
+| ✅ | Virtual Xbox 360 output (ViGEmBus) |
+| ✅ | HidHide device cloaking |
+| ✅ | USB + Bluetooth auto-detect |
+| 📋 | Tauri 2 migration (from Node.js to Rust backend) |
+| 📋 | macOS Bluetooth reconnect stability |
+| 📋 | Per-game preset system (load config by detected process) |
+
+---
+
+## Contributing
+
+Issues and PRs welcome. For feature requests, check the roadmap above first. The full immersion version is closed-source but the free version here is MIT — build on it freely.
+
+---
+
+## License
 
 MIT — see [LICENSE](LICENSE).
 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ for sim racers and controller nerds.</sub>
+  <sub>Built for sim racers and controller nerds.</sub>
 </p>
