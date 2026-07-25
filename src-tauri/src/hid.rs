@@ -1344,9 +1344,13 @@ fn racing_l2(s: &mut AppState, st: &Strength) -> (u8, u8, u8) {
     // travel. Fires any time the fronts are actually locking (slip > 0.75) while
     // the brake is armed. Pump rate scales with slip intensity so a mild lock
     // pulses slowly and a full lockup hammers fast.
+    let abs_lockup_thresh: f32 = match s.game_source {
+        GameSource::F123 | GameSource::Assetto => 0.50,
+        _ => 0.75,
+    };
     let telem_abs = s.edition == Edition::Full
         && s.t_on
-        && s.t_slip_front > 0.75
+        && s.t_slip_front > abs_lockup_thresh
         && s.l2_haptic;
 
     // Timer-based ABS: sustained full-brake (no telemetry required). Reset only when
@@ -1395,7 +1399,7 @@ fn racing_l2(s: &mut AppState, st: &Strength) -> (u8, u8, u8) {
     };
     // Pneumatic trail collapse — during full lock-up the contact patch loses lateral
     // support; unwind brake resistance smoothly instead of holding a rigid wall.
-    if s.t_on && s.t_slip_combined > 0.75 && s.t_slip_front > 0.75 {
+    if s.t_on && s.t_slip_combined > abs_lockup_thresh && s.t_slip_front > abs_lockup_thresh {
         s.l2_trail_resist = signal::pneumatic_trail_decay(
             s.l2_trail_resist.max(brake_f as f32),
             PNEUMATIC_DECAY,
@@ -1649,18 +1653,23 @@ fn compute_rumble(s: &AppState, st: &Strength) -> (u8, u8) {
                 let front_load  = load(s.t_susp_fl.max(s.t_susp_fr));
                 let corner_load = load(s.t_susp_fl.max(s.t_susp_fr).max(s.t_susp_rl).max(s.t_susp_rr));
 
+                // Per-game slip threshold for rumble: F1/AC tyres have more grip.
+                let rumble_thresh: f32 = match s.game_source {
+                    GameSource::F123 | GameSource::Assetto => 0.12,
+                    _ => 0.20,
+                };
                 // Wheelspin — rear tires slipping under power → strong high-freq grain.
                 // Pacejka-shaped intensity so micro-slips stay subtle, deep slips punch.
-                if s.t_slip_rear > 0.20 && s.r2_raw > DEAD_ZONE {
+                if s.t_slip_rear > rumble_thresh && s.r2_raw > DEAD_ZONE {
                     let pacejka = signal::pacejka_haptic(s.t_slip_rear);
-                    let spin = ((s.t_slip_rear - 0.20) / 0.80).clamp(0.0, 1.0) * rear_load * pacejka;
+                    let spin = ((s.t_slip_rear - rumble_thresh) / (1.0 - rumble_thresh)).clamp(0.0, 1.0) * rear_load * pacejka;
                     rr = rr.max((spin * 240.0) as u8);
                     rl = rl.max((spin * 120.0) as u8);
                 }
                 // Lockup — front tires sliding under braking → heavy coarse judder.
-                if s.t_slip_front > 0.20 && s.l2_raw > DEAD_ZONE {
+                if s.t_slip_front > rumble_thresh && s.l2_raw > DEAD_ZONE {
                     let pacejka = signal::pacejka_haptic(s.t_slip_front);
-                    let lock = ((s.t_slip_front - 0.20) / 0.80).clamp(0.0, 1.0) * front_load * pacejka;
+                    let lock = ((s.t_slip_front - rumble_thresh) / (1.0 - rumble_thresh)).clamp(0.0, 1.0) * front_load * pacejka;
                     rl = rl.max((lock * 220.0) as u8);
                     rr = rr.max((lock * 160.0) as u8);
                 }
@@ -2140,12 +2149,31 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     // full-ABS lockup threshold — buzz a tremor into the pedal resistance so
                     // you feel the tires fighting for grip before they let go. Bridges the
                     // gap between a planted brake and the ABS pump (which takes over >0.75).
+                    // F1/AC use tighter thresholds since their tyres have more precise grip.
+                    let (grind_lo, grind_hi) = match s.game_source {
+                        GameSource::F123 | GameSource::Assetto =>
+                            (0.10_f32, 0.50_f32),
+                        _ =>
+                            (0.20_f32, 0.75_f32),
+                    };
                     if s.edition == Edition::Full && s.t_on && s.l2_haptic
-                        && s.t_slip_front > 0.20 && s.t_slip_front <= 0.75
+                        && s.t_slip_front > grind_lo && s.t_slip_front <= grind_hi
                     {
-                        let grind = ((s.t_slip_front - 0.20) / 0.55).clamp(0.0, 1.0);
+                        let grind = ((s.t_slip_front - grind_lo)
+                            / (grind_hi - grind_lo)).clamp(0.0, 1.0);
                         let wave  = (s.road_phase * std::f32::consts::TAU).sin();
                         f += grind * 45.0 * wave;
+                    }
+                    // Trailbraking oversteer: rear starting to slide while braking
+                    // hard into a corner — the rear slip pushes back through the
+                    // brake pedal so you feel the car rotating before you see it.
+                    if s.edition == Edition::Full && s.t_on && s.l2_haptic
+                        && s.t_slip_rear > grind_lo && s.t_slip_rear <= grind_hi
+                        && s.t_slip_front > grind_lo
+                    {
+                        let trail = ((s.t_slip_rear - grind_lo)
+                            / (grind_hi - grind_lo)).clamp(0.0, 1.0);
+                        f += trail * 30.0;
                     }
                     // Surface friction through the brake: rough/gravel surfaces add grain to
                     // the pedal, mirroring the throttle so both feet feel the road texture.
