@@ -716,6 +716,8 @@ pub struct AppState {
                                 // true even while paused/in menus — distinct from t_on)
     pub t_last_rx:       Option<Instant>, // timestamp of last valid packet (watchdog)
     pub t_f123_max_rpm:   f32,           // dynamic max RPM seen for F1 23 normalization
+    pub t_mass_factor:    f32,           // running vehicle mass estimate (1.0 = average)
+    pub t_prev_rpm:       f32,           // previous-frame RPM for mass delta computation
     pub t_rpm:           f32,   // real engine revs, normalized idle→redline (0..1)
     pub t_accel:         f32,   // longitudinal acceleration (m/s²; + accel, − brake)
     pub t_slip_front:    f32,   // front tire slip ratio (lockup / understeer)
@@ -888,7 +890,9 @@ impl Default for AppState {
             eng_prev_throttle: 0.0,
             eng_lash_frames: 0,
             burble_frames: 0,
-            t_on: false, t_connected: false, t_last_rx: None, t_f123_max_rpm: 13000.0, t_rpm: 0.0, t_accel: 0.0,
+            t_on: false, t_connected: false, t_last_rx: None, t_f123_max_rpm: 13000.0,
+            t_mass_factor: 1.0, t_prev_rpm: 0.0,
+            t_rpm: 0.0, t_accel: 0.0,
             t_slip_front: 0.0, t_slip_rear: 0.0, t_slip_combined: 0.0,
             t_surface: 0.0, t_kerb: 0.0, t_speed: 0.0, t_gear: 0, t_prev_gear: 0,
             t_accel_input: 0, t_brake_input: 0,
@@ -2001,6 +2005,18 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
             auto_detect_drivetrain(s);
             // Real revs → the pulse pitch and rev-matching are genuine, not inferred.
             s.engine_rpm = s.t_rpm;
+            // Vehicle mass estimation — heavier cars take longer for RPM to
+            // climb at the same throttle input.  Track the ratio of RPM delta
+            // to throttle delta; smooth it over time so the pedal feel adapts
+            // to each car automatically.
+            let rpm_delta = (s.t_rpm - s.t_prev_rpm).max(0.0);
+            let thr = s.r2_raw as f32 / 255.0;
+            if rpm_delta > 0.001 && thr > 0.10 {
+                // High throttle + slow RPM climb = heavy car → mass_factor > 1
+                let instant = (thr / rpm_delta).clamp(0.0, 5.0);
+                s.t_mass_factor += (instant - s.t_mass_factor) * 0.02;
+            }
+            s.t_prev_rpm = s.t_rpm;
             // Real longitudinal G is the true driveline load: forward accel pulls to the
             // rear, deceleration loads engine braking / the brakes. (~9.81 m/s² = 1 g.)
             let g = s.t_accel / 9.81;
@@ -2251,6 +2267,13 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                     (lm, lp0, lp1)
                 };
                 let (_, mut throttle) = racing_forces(s);
+                // Vehicle mass scaling — heavier cars should feel heavier through
+                // the pedal. t_mass_factor is estimated from RPM response rate
+                // to throttle input (slow climb = heavy car).
+                if s.edition == Edition::Full && s.t_on {
+                    throttle = ((throttle as f32) * s.t_mass_factor.clamp(0.7, 1.8))
+                        .min(255.0) as u8;
+                }
                 // Throttle lightening (opt-in) — hard steering at high throttle bleeds
                 // off throttle resistance, like the rears breaking traction at the
                 // limit. Starts at ~30% lock, up to ~60% lighter at full lock. Pairs
