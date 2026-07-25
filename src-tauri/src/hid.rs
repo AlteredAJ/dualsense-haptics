@@ -2214,6 +2214,16 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                             / (lat_brake_hi - lat_brake_lo)).clamp(0.0, 1.0);
                         f *= 1.0 + lat * 0.30;
                     }
+                    // Suspension-coupled feedback — front dive under braking
+                    // firms the pedal. The harder you brake, the more the nose
+                    // drops and the pedal pushes back — like real hydraulics.
+                    if s.edition == Edition::Full && s.t_on && s.l2_haptic {
+                        let front_comp = s.t_susp_fl.max(s.t_susp_fr);
+                        if front_comp > 0.45 {
+                            let dive = ((front_comp - 0.45) / 0.55).clamp(0.0, 1.0);
+                            f *= 1.0 + dive * 0.20;
+                        }
+                    }
                     // Surface friction through the brake: rough/gravel surfaces add grain to
                     // the pedal, mirroring the throttle so both feet feel the road texture.
                     if s.edition == Edition::Full && s.t_on && s.t_surface > 0.08 {
@@ -2267,6 +2277,16 @@ fn process_frame(s: &mut AppState) -> [u8; 48] {
                 {
                     let lat = ((s.t_slip_angle - lat_lo) / (lat_hi - lat_lo)).clamp(0.0, 1.0);
                     throttle = ((throttle as f32) * (1.0 + lat * 0.35)).min(255.0) as u8;
+                }
+                // Suspension-coupled feedback — rear squat under acceleration
+                // firms the throttle, front dive under braking firms the brake.
+                // You feel the chassis pitch through the pedals like a real car.
+                if s.edition == Edition::Full && s.t_on && s.r2_raw > DEAD_ZONE {
+                    let rear_comp = s.t_susp_rl.max(s.t_susp_rr);
+                    if rear_comp > 0.45 {
+                        let squat = ((rear_comp - 0.45) / 0.55).clamp(0.0, 1.0);
+                        throttle = ((throttle as f32) * (1.0 + squat * 0.20)).min(255.0) as u8;
+                    }
                 }
                 // Assisted stability: throttle firms up as rear slip rises past 0.40,
                 // making it harder to push through wheelspin — like ESP pushing back.
