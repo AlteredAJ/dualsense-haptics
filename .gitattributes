@@ -1,0 +1,5 @@
+# Language stats: this is a Rust/Tauri app. The landing page and the app's
+# stylesheet outweigh the engine by byte count, which made GitHub label the
+# repo "CSS". Exclude presentation assets so the header reflects the codebase.
+docs/*      linguist-documentation
+src/*.css   linguist-detectable=false
